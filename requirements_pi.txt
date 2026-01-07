@@ -1,0 +1,21 @@
+#raspberry에 다운
+
+# --- AI 엔진 (TensorFlow Lite) ---
+# 라즈베리 파이 + Coral TPU 조합의 필수 핵심 엔진
+tflite-runtime
+
+# --- 영상 처리 ---
+# headless: 모니터 없이 돌아가는 가벼운 버전 (GUI 기능 제외)
+opencv-python-headless
+
+# --- 하드웨어 제어 (GPIO) ---
+# 중요! 라즈베리 파이 5 전용 GPIO 라이브러리 (기존 RPi.GPIO 대체)
+rpi-lgpio
+
+# --- 데이터 처리 및 유틸 ---
+numpy
+psutil      # CPU 온도, 메모리 사용량 체크용
+requests    # (선택) 서버나 관제실로 데이터 보낼 때 필요
+pyserial    # (선택) 아두이노 등 외부 장치와 통신할 때 필요
+
+# 다운받는 법 pip install -r requirements_pi.txt
