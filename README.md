@@ -27,7 +27,7 @@
 | --- | --- | --- |
 | **Main Controller** | Raspberry Pi 5 (8GB) | 전체 시스템 제어 및 연산 |
 | **AI Accelerator** | Google Coral USB TPU | 딥러닝 추론 가속 (Real-time) |
-| **Vision Sensor** | RPi Camera Module 3 (Wide) | 횡단보도 영상 수집 |
+| **Vision Sensor** | CCTV (IP Camera / RTSP) | 횡단보도 실시간 영상 수집 |
 | **Alert System** | LED Strip (WS2812B), Active Buzzer | 위험 상황 알림 (시각/청각) |
 | **Simulation Env** | Virtual Simulator (Unity/CARLA) | 가상 차량 접근 시나리오 검증 |
 
@@ -75,7 +75,7 @@ source a-pas-env/bin/activate
 ```
 <br>
 
-## 2.라이브러리 설치 (Environment Setup)
+## 2. 라이브러리 설치 (Environment Setup)
 Case A: 학습용 PC / 노트북 (Windows) GPU 학습 및 데이터 분석을 위한 라이브러리(PyTorch, Ultralytics 등)를 설치합니다.
 
 ```bash
@@ -83,18 +83,18 @@ pip install -r requirements.txt
 ```
 Case B: 라즈베리 파이 5 (Run-time) 실시간 추론을 위한 경량화 라이브러리(TFLite, GPIO 등)를 설치합니다.
 ```bash
-pip install -r requirements_pi.txt
+pip install -r requirements-pi.txt
 ```
 
 <br>
 
 ## 사용방법(Usage)
-### 1.AI 모델 학습 (Training on PC)
+### 1. AI 모델 학습 (Training on PC)
 데이터셋이 준비되면 PC에서 아래 명령어로 학습을 진행합니다.
 ```bash
 python ai_model/yolo_train/train.py
 ```
-### 메인 시스템 구동 (Running on Pi)
+### 2. 메인 시스템 구동 (Running on Pi)
 라즈베리 파이에서 시스템을 시작합니다. (카메라 및 센서 연결 필수)
 ```bash
 python main.py
@@ -102,4 +102,4 @@ python main.py
 
 <br>
 
-### 본 프로젝트는 한국공학대학교 전자공학과 졸업작품으로 진행됐습니다.
+### 본 프로젝트는 한국공학대학교 전자공학부 졸업작품으로 진행됐습니다.
