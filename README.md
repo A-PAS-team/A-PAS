@@ -29,7 +29,7 @@
 | **AI Accelerator** | Google Coral USB TPU | 딥러닝 추론 가속 (Real-time) |
 | **Vision Sensor** | RPi Camera Module 3 (Wide) | 횡단보도 영상 수집 |
 | **Alert System** | LED Strip (WS2812B), Active Buzzer | 위험 상황 알림 (시각/청각) |
-| **Test Vehicle** | RC Car (1/10 scale) | 차량 접근 시나리오 테스트용 |
+| **Simulation Env** | Virtual Simulator (Unity/CARLA) | 가상 차량 접근 시나리오 검증 |
 
 ### Technology Stack
 * **AI Model**
