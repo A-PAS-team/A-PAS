@@ -13,7 +13,7 @@
 기존 시스템과 달리 **인프라(횡단보도)**가 스스로 위험을 판단하고, 보행자에게 직관적인 **시각/청각 경고**를 제공하여 사고를 능동적으로 방지합니다.
 
 > **핵심 목표 (Core Goal)**
-> * **One Scenario Perfection**: 주간 환경에서의 차량 접근 탐지 및 단계별 위험 경고 완벽 구현
+> * **Vision-only Solution**: 라이다 없이 영상과 AI만으로 정밀 충돌 예측
 > * **Edge AI**: 클라우드 없이 독립적으로 작동하는 고성능 엣지 컴퓨팅 구현
 
 **개발 기간**: 2026.01.07 ~ 2026.07 (약 7개월)
@@ -25,7 +25,7 @@
 ### Hardware Configuration
 | 구분 | 장비명 | 용도 |
 | --- | --- | --- |
-| **Main Controller** | Raspberry Pi 5 (8GB) | 전체 시스템 제어 및 연산 |
+| **Main Controller** | Raspberry Pi 5 (16GB) | 전체 시스템 제어 및 연산 |
 | **AI Accelerator** | Google Coral USB TPU | 딥러닝 추론 가속 (Real-time) |
 | **Vision Sensor** | CCTV (IP Camera / RTSP) | 횡단보도 실시간 영상 수집 |
 | **Alert System** | LED Strip (WS2812B), Active Buzzer | 위험 상황 알림 (시각/청각) |
@@ -34,7 +34,7 @@
 ### Technology Stack
 * **AI Model**
     * **Detection**: YOLOv8n (Optimized for Coral TPU)
-    * **Prediction**: LSTM / 1D-CNN (Time-Series Risk Analysis)
+    * **Prediction**: Trajectory LSTM (PyTorch) - 이동 경로 예측 및 충돌 감지
 * **Software**
     * Python 3.x, OpenCV, TensorFlow Lite, PyTorch
 * **OS**
@@ -95,15 +95,39 @@ pip install -r requirements-pi.txt
 
 <br>
 
-## 사용방법(Usage)
-### 1. AI 모델 학습 (Training on PC)
-데이터셋이 준비되면 PC에서 아래 명령어로 학습을 진행합니다.
+## 💻 사용방법 (Usage)
+
+### Step 1. 데이터 준비 및 전처리 (PC)
+학습에 사용할 원본 영상(`.mp4`)을 `raw_data/` 폴더에 넣은 후, 이를 AI가 학습할 수 있는 **CSV 데이터(좌표 정보)**로 변환합니다.
+
 ```bash
-python ai_model/yolo_train/train.py
+# 1. 학습 코드가 있는 폴더로 이동
+cd ai_model/yolo_train
+
+# 2. 영상 데이터를 분석하여 CSV로 변환 (전처리)
+python video_to_csv.py
+
+# (결과: data/ 폴더 내에 normal_data_*.csv 파일들이 자동 생성됨)
 ```
-### 2. 메인 시스템 구동 (Running on Pi)
-라즈베리 파이에서 시스템을 시작합니다. (카메라 및 센서 연결 필수)
+
+### Step 2. LSTM 충돌 예측 모델 학습 (PC)
+추출된 보행자와 차량의 이동 경로 데이터를 기반으로, 미래 경로를 예측하는 LSTM 모델을 학습시킵니다.
+
 ```bash
+# 3. LSTM 모델 학습 시작
+python tr_trajectory.py
+
+# (결과: 학습이 완료되면 같은 폴더에 'trajectory_model.pth' 가중치 파일이 생성됨)
+```
+
+### Step 3. 메인 시스템 구동 (Raspberry Pi)
+학습된 모델이 준비되면, 라즈베리 파이에서 메인 시스템을 실행하여 실시간 충돌 경고를 시작합니다. (카메라 연결 필수)
+
+```bash
+## 4. 프로젝트 최상위 폴더(A-PAS)로 이동
+cd ../..
+
+# 5. 메인 시스템 실행
 python main.py
 ```
 
