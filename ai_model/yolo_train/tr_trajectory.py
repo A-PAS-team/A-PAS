@@ -1,161 +1,134 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader, Dataset
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import glob
 import os
-import glob  # 👈 [추가] 파일 목록 찾는 라이브러리
 
 # ==========================================
-# ⚙️ [설정] CSV 파일들이 모여있는 폴더 패턴
+# ⚙️ [설정] 하이퍼파라미터 및 경로
 # ==========================================
-# 예: data 폴더 안에 있는 모든 csv 파일
-# 또는 "normal_data_*.csv" 라고 쓰면 번호 달린 파일 다 가져옴
-CSV_PATTERN = "data/normal_data_*.csv" 
+TRAIN_DATA_DIR = "data/Training"
+VAL_DATA_DIR = "data/Validation"
+MODEL_SAVE_DIR = "models"
+os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
 
-MODEL_SAVE_PATH = "trajectory_model.pth"
-PAST_FRAMES = 10
-FUTURE_FRAMES = 5
-HIDDEN_SIZE = 64
-NUM_LAYERS = 2
+# 필수 설정 (본인 영상 해상도에 맞게 수정)
+IMG_W, IMG_H = 1920, 1080 
+SEQ_LENGTH = 5     
+PRED_LENGTH = 3    
+INPUT_SIZE = 2      
+HIDDEN_SIZE = 128   
+NUM_LAYERS = 2      
 BATCH_SIZE = 64
-EPOCHS = 100
+EPOCHS = 50
 LEARNING_RATE = 0.001
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # ==========================================
-
+# 📊 [데이터셋] 정규화 로직 포함
+# ==========================================
 class TrajectoryDataset(Dataset):
-    def __init__(self, csv_pattern, past_len, future_len):
-        self.past_len = past_len
-        self.future_len = future_len
-        self.samples = []
+    def __init__(self, data_dir):
+        self.sequences = []
+        self.labels = []
         
-        # 1. 패턴에 맞는 모든 파일 찾기
-        file_list = glob.glob(csv_pattern)
-        
-        if not file_list:
-            print(f"❌ 오류: '{csv_pattern}'에 해당하는 파일이 하나도 없습니다!")
-            return
-
-        print(f"📂 총 {len(file_list)}개의 CSV 파일을 발견했습니다. 데이터 로딩 중...")
-
-        # 2. 파일 하나씩 열어서 데이터 싹 긁어모으기
-        for file_path in file_list:
-            print(f"   Reading {file_path}...")
-            try:
-                df = pd.read_csv(file_path)
+        csv_files = glob.glob(os.path.join(data_dir, "*.csv"))
+        for file in csv_files:
+            df = pd.read_csv(file)
+            for track_id, group in df.groupby('track_id'):
+                # 좌표를 0~1 사이로 정규화
+                coords = group[['x_center', 'y_center']].values
+                coords[:, 0] /= IMG_W
+                coords[:, 1] /= IMG_H
                 
-                # 좌표 컬럼 선택 (map_x 우선, 없으면 x_center)
-                if 'map_x' in df.columns:
-                    coords_col = ['map_x', 'map_y']
-                else:
-                    coords_col = ['x_center', 'y_center']
+                if len(coords) < (SEQ_LENGTH + PRED_LENGTH):
+                    continue
+                
+                for i in range(len(coords) - SEQ_LENGTH - PRED_LENGTH + 1):
+                    self.sequences.append(coords[i : i + SEQ_LENGTH])
+                    self.labels.append(coords[i + SEQ_LENGTH : i + SEQ_LENGTH + PRED_LENGTH])
 
-                # ID별로 그룹화
-                # (중요: 파일 A의 1번 사람과 파일 B의 1번 사람은 다른 사람이므로
-                #  파일 단위로 루프 안에서 처리해야 섞이지 않음! 👍)
-                for track_id, group in df.groupby('track_id'):
-                    group = group.sort_values('frame')
-                    track_data = group[coords_col].values.astype(np.float32)
-                    
-                    if len(track_data) < past_len + future_len:
-                        continue
-                        
-                    # 슬라이딩 윈도우
-                    for i in range(len(track_data) - past_len - future_len + 1):
-                        x_seq = track_data[i : i + past_len]
-                        y_seq = track_data[i + past_len : i + past_len + future_len]
-                        self.samples.append((x_seq, y_seq))
-                        
-            except Exception as e:
-                print(f"   ⚠️ {file_path} 읽기 실패: {e}")
+        self.sequences = torch.FloatTensor(np.array(self.sequences))
+        self.labels = torch.FloatTensor(np.array(self.labels))
 
-        print(f"✅ 모든 파일 로딩 완료! 총 샘플 수: {len(self.samples)}개")
+    def __len__(self): return len(self.sequences)
+    def __getitem__(self, idx): return self.sequences[idx], self.labels[idx]
 
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, idx):
-        x, y = self.samples[idx]
-        return torch.tensor(x), torch.tensor(y)
-
-# --- (아래 모델 정의와 학습 코드는 기존과 동일) ---
-
-class TrajectoryLSTM(nn.Module):
-    def __init__(self, input_size=2, hidden_size=64, num_layers=2, past_frames=10, future_frames=5):
-        super(TrajectoryLSTM, self).__init__()
-        self.future_frames = future_frames
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)
-        self.fc = nn.Linear(hidden_size, future_frames * 2)
+# ==========================================
+# 🧠 [모델] LSTM 구조 (batch_first 수정 완료)
+# ==========================================
+class LSTMModel(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers):
+        super(LSTMModel, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, PRED_LENGTH * 2)
 
     def forward(self, x):
-        out, _ = self.lstm(x)
-        last_hidden = out[:, -1, :]
-        predicted = self.fc(last_hidden)
-        predicted = predicted.view(-1, self.future_frames, 2)
-        return predicted
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+        out, _ = self.lstm(x, (h0, c0))
+        out = self.fc(out[:, -1, :]) 
+        return out.view(-1, PRED_LENGTH, 2)
 
-def train():
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"🚀 학습 시작! Device: {device}")
-    
-    # 여기서 csv_pattern을 넘겨줍니다.
-    dataset = TrajectoryDataset(CSV_PATTERN, PAST_FRAMES, FUTURE_FRAMES)
-    
-    if len(dataset) == 0:
-        print("데이터가 없어서 종료합니다.")
-        return
+# 학습 실행 로직 (이전과 동일하지만 정규화된 데이터로 수행)
+# ... (생략: 이전 tr_trajectory.py의 학습 루프 부분과 동일)
+# ==========================================
+# 🚀 [실행] 학습 루프
+# ==========================================
+# 1. 데이터 로더 준비
+train_dataset = TrajectoryDataset(TRAIN_DATA_DIR)
+val_dataset = TrajectoryDataset(VAL_DATA_DIR)
 
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
-    
-    model = TrajectoryLSTM(past_frames=PAST_FRAMES, future_frames=FUTURE_FRAMES).to(device)
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+# 2. 모델, 손실함수, 최적화기 설정
+model = LSTMModel(INPUT_SIZE, HIDDEN_SIZE, NUM_LAYERS).to(device)
+criterion = nn.MSELoss() # 평균 제곱 오차 (좌표 오차 계산)
+optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+
+# 3. Epoch 반복
+best_val_loss = float('inf')
+
+for epoch in range(EPOCHS):
     model.train()
-    
-    for epoch in range(EPOCHS):
-        total_loss = 0
-        for x_batch, y_batch in dataloader:
-            x_batch = x_batch.to(device)
-            y_batch = y_batch.to(device)
-            
-            optimizer.zero_grad()
-            pred = model(x_batch)
-            loss = criterion(pred, y_batch)
-            
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-            
-        if (epoch+1) % 10 == 0:
-            avg_loss = total_loss / len(dataloader)
-            print(f"Epoch [{epoch+1}/{EPOCHS}], Loss: {avg_loss:.6f}")
-            
-    torch.save(model.state_dict(), MODEL_SAVE_PATH)
-    print(f"🎉 학습 완료! {MODEL_SAVE_PATH}")
-    
-    # 시각화 (데이터셋이 비어있지 않다면)
-    if len(dataset) > 0:
-        visualize_result(model, dataset, device)
-
-def visualize_result(model, dataset, device):
-    model.eval()
-    idx = np.random.randint(0, len(dataset))
-    x, y_true = dataset[idx]
-    with torch.no_grad():
-        x_input = x.unsqueeze(0).to(device)
-        y_pred = model(x_input).cpu().squeeze(0)
+    train_loss = 0
+    for seqs, targets in train_loader:
+        seqs, targets = seqs.to(device), targets.to(device)
         
-    plt.figure(figsize=(8, 8))
-    plt.plot(x[:, 0], x[:, 1], 'bo-', label='Past')
-    plt.plot(y_true[:, 0], y_true[:, 1], 'go-', label='True Future')
-    plt.plot(y_pred[:, 0], y_pred[:, 1], 'rx--', label='Predicted')
-    plt.legend()
-    plt.title("Trajectory Test")
-    plt.grid(True)
-    plt.show()
+        optimizer.zero_grad()
+        outputs = model(seqs)
+        loss = criterion(outputs, targets)
+        loss.backward()
+        optimizer.step()
+        
+        train_loss += loss.item()
+    
+    # 검증(Validation)
+    model.eval()
+    val_loss = 0
+    with torch.no_grad():
+        for v_seqs, v_targets in val_loader:
+            v_seqs, v_targets = v_seqs.to(device), v_targets.to(device)
+            v_outputs = model(v_seqs)
+            v_loss = criterion(v_outputs, v_targets)
+            val_loss += v_loss.item()
+    
+    avg_train_loss = train_loss / len(train_loader)
+    avg_val_loss = val_loss / len(val_loader)
+    
+    print(f"Epoch [{epoch+1}/{EPOCHS}] Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
+    
+    # 성능이 가장 좋은 모델 저장
+    if avg_val_loss < best_val_loss:
+        best_val_loss = avg_val_loss
+        torch.save(model.state_dict(), os.path.join(MODEL_SAVE_DIR, "best_trajectory_model.pth"))
+        print(f"⭐ 모델 저장 완료! (Val Loss: {best_val_loss:.4f})")
 
-if __name__ == "__main__":
-    train()
+print("\n🎉 모든 학습이 완료되었습니다!")

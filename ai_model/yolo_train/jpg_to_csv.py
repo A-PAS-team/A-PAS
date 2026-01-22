@@ -9,7 +9,7 @@ from ultralytics import YOLO
 # ⚙️ [설정] 경로 및 모델 설정
 # ==========================================
 # 1. 최상위 데이터 경로 (SSD)
-INPUT_BASE = r"E:\raw_data" 
+INPUT_BASE = r"D:\raw_data" 
 
 # 2. 결과 CSV가 저장될 폴더 (A-PAS/ai_model/yolo_train/data)
 OUTPUT_BASE = "data"

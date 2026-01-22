@@ -1,142 +1,119 @@
 import cv2
-import numpy as np
 import torch
-import math
+import torch.nn as nn
+import numpy as np
 from ultralytics import YOLO
+from collections import deque
 
 # ==========================================
-# ⚙️ [최종 설정] 환경에 맞게 수정하세요
+# ⚙️ [설정] 학습 환경과 100% 일치해야 함
 # ==========================================
-VIDEO_PATH = "my_video.mp4"     # 영상 파일
-MODEL_NAME = "yolov8n.pt"       # 모델 파일
-SPEED_THRESHOLD = 0.02          # 🚨 0.02보다 빠르면 위험 (분석 결과 반영)
-CONF_THRESHOLD = 0.5            # 정확도 0.5 이상만 인정
+# 1. 영상 해상도 (학습 때와 동일하게 설정)
+IMG_W, IMG_H = 1920, 1080 
+
+# 2. 하이퍼파라미터 (학습 때 수정한 값과 동일하게 설정)
+SEQ_LENGTH = 5     
+PRED_LENGTH = 3    
+HIDDEN_SIZE = 128
+NUM_LAYERS = 2
+
+# 3. 모델 경로
+YOLO_MODEL_PATH = "yolov8n.pt"
+LSTM_MODEL_PATH = "models/best_trajectory_model.pth"
+VIDEO_PATH = "my_video.mp4" # 실제 영상 파일명으로 수정
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # ==========================================
+# 🧠 [모델 정의] 학습 때와 동일한 구조
+# ==========================================
+class LSTMModel(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers):
+        super(LSTMModel, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        # batch_first=True 가 핵심입니다.
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, PRED_LENGTH * 2)
 
-roi_points = []
+    def forward(self, x):
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+        out, _ = self.lstm(x, (h0, c0))
+        out = self.fc(out[:, -1, :])
+        return out.view(-1, PRED_LENGTH, 2)
 
-def click_event(event, x, y, flags, param):
-    """마우스로 횡단보도 영역(4점) 찍기"""
-    global roi_points
-    if event == cv2.EVENT_LBUTTONDOWN:
-        if len(roi_points) < 4:
-            roi_points.append((x, y))
-            print(f"📍 좌표 찍힘: ({x}, {y})")
+# ==========================================
+# 🚀 [준비] 모델 로드
+# ==========================================
+print(f"🚀 시스템 시작 (장치: {device})")
+yolo_model = YOLO(YOLO_MODEL_PATH)
+lstm_model = LSTMModel(2, HIDDEN_SIZE, NUM_LAYERS).to(device)
+lstm_model.load_state_dict(torch.load(LSTM_MODEL_PATH, map_location=device))
+lstm_model.eval()
 
-def get_speed(track_id, current_y, prev_data):
-    """속도 계산 (안전장치 포함)"""
-    if track_id in prev_data:
-        speed = current_y - prev_data[track_id]
-        # ⚠️ 안전장치: nan이거나 비정상적으로 큰 값은 0 처리
-        if math.isnan(speed) or abs(speed) > 1.0:
-            return 0.0
-        return speed
-    return 0.0
+track_history = {}
+cap = cv2.VideoCapture(VIDEO_PATH)
 
-def is_inside_roi(box, roi_poly):
-    """발바닥이 ROI 안에 있는지 확인"""
-    x, y, w, h = box
-    foot_x, foot_y = int(x), int(y + h/2)
-    return cv2.pointPolygonTest(roi_poly, (foot_x, foot_y), False) >= 0
+# ==========================================
+# 🎬 [실행] 메인 루프
+# ==========================================
+while cap.isOpened():
+    success, frame = cap.read()
+    if not success: break
 
-def main():
-    global roi_points
+    # 영상 크기가 설정과 다를 경우를 대비해 리사이즈 (선택 사항)
+    frame = cv2.resize(frame, (IMG_W, IMG_H))
 
-    # 1. GPU 가속 활성화
-    print(f"🚀 시스템 초기화... (GPU: {torch.cuda.get_device_name(0)})")
-    model = YOLO(MODEL_NAME)
-    model.to('cuda') 
+    # YOLO 추적
+    results = yolo_model.track(frame, persist=True, verbose=False)
 
-    cap = cv2.VideoCapture(VIDEO_PATH)
-    if not cap.isOpened():
-        print(f"❌ 영상을 열 수 없습니다: {VIDEO_PATH}")
-        return
-
-    # 2. ROI 설정 (첫 화면)
-    ret, first_frame = cap.read()
-    if ret:
-        print("\n🖱️ 화면에 횡단보도 네 모서리를 클릭하세요! (총 4번)")
-        cv2.imshow("Set Crosswalk ROI", first_frame)
-        cv2.setMouseCallback("Set Crosswalk ROI", click_event)
+    if results[0].boxes.id is not None:
+        boxes = results[0].boxes.xywh.cpu().numpy()
+        track_ids = results[0].boxes.id.int().cpu().tolist()
         
-        while len(roi_points) < 4:
-            if cv2.waitKey(10) == 27: return 
-            for pt in roi_points:
-                cv2.circle(first_frame, pt, 5, (0, 0, 255), -1)
-            cv2.imshow("Set Crosswalk ROI", first_frame)
-        cv2.destroyWindow("Set Crosswalk ROI")
-    
-    roi_poly = np.array(roi_points, np.int32)
-    prev_y = {}
-    frame_h, frame_w = first_frame.shape[:2]
+        for box, track_id in zip(boxes, track_ids):
+            x, y, w, h = box
+            center = (float(x), float(y))
+            
+            # 1. 궤적 업데이트
+            if track_id not in track_history:
+                track_history[track_id] = deque(maxlen=SEQ_LENGTH)
+            track_history[track_id].append(center)
 
-    # ==========================================
-    # 🎬 실시간 감지 시작
-    # ==========================================
-    while True:
-        ret, frame = cap.read()
-        if not ret: break
+            # 2. 과거 궤적 그리기 (파란색 실선)
+            if len(track_history[track_id]) > 1:
+                points = np.array(list(track_history[track_id]), dtype=np.int32).reshape((-1, 1, 2))
+                cv2.polylines(frame, [points], isClosed=False, color=(255, 0, 0), thickness=2)
 
-        # GPU 추적
-        results = model.track(frame, persist=True, verbose=False, device=0, conf=CONF_THRESHOLD)
-        annotated_frame = results[0].plot()
-        cv2.polylines(annotated_frame, [roi_poly], True, (0, 255, 0), 2)
-
-        pedestrian_detected = False
-        danger_detected = False
-        warning_message = "SAFE"
-
-        if results[0].boxes.id is not None:
-            boxes = results[0].boxes.xywh.cpu().numpy()
-            track_ids = results[0].boxes.id.int().cpu().tolist()
-            class_ids = results[0].boxes.cls.int().cpu().tolist()
-
-            for box, track_id, class_id in zip(boxes, track_ids, class_ids):
-                norm_y = box[1] / frame_h
-                speed = get_speed(track_id, norm_y, prev_y) # 모든 객체 속도 계산
-
-                # 🟢 사람(0)인 경우
-                if class_id == 0:
-                    # [수정됨] 사람이지만 속도가 엄청 빠르다? -> 킥보드/뛰는 사람 -> 위험!
-                    if speed > SPEED_THRESHOLD:
-                        danger_detected = True
-                        warning_message = "FAST OBJECT (Kickboard?)"
-                        x1, y1 = int(box[0]), int(box[1] - box[3]/2)
-                        cv2.putText(annotated_frame, "FAST!", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            # 3. 미래 예측 (데이터가 충분히 쌓였을 때 실행)
+            if len(track_history[track_id]) == SEQ_LENGTH:
+                # [정규화] 입력 좌표를 0~1 사이로 변환
+                input_seq = np.array(list(track_history[track_id]))
+                input_seq[:, 0] /= IMG_W
+                input_seq[:, 1] /= IMG_H
+                input_seq_torch = torch.FloatTensor([input_seq]).to(device)
+                
+                with torch.no_grad():
+                    prediction = lstm_model(input_seq_torch).cpu().numpy()[0]
+                
+                # [복원] 결과 좌표를 다시 영상 크기로 변환하여 그리기
+                for i in range(len(prediction)):
+                    # 예측된 점은 빨간색으로 표시
+                    pred_x = int(prediction[i, 0] * IMG_W)
+                    pred_y = int(prediction[i, 1] * IMG_H)
                     
-                    # 속도는 느린데 횡단보도 안에 있다 -> 보행자
-                    elif is_inside_roi(box, roi_poly):
-                        pedestrian_detected = True
+                    # 화면 범위를 벗어나지 않을 때만 그리기
+                    if 0 <= pred_x < IMG_W and 0 <= pred_y < IMG_H:
+                        cv2.circle(frame, (pred_x, pred_y), 5, (0, 0, 255), -1)
 
-                # 🚗 차(2,5,7)인 경우
-                elif class_id in [2, 5, 7]:
-                    if speed > SPEED_THRESHOLD:
-                        danger_detected = True
-                        warning_message = "FAST CAR DETECTED"
-                        x1, y1 = int(box[0]), int(box[1] - box[3]/2)
-                        cv2.putText(annotated_frame, "DANGER!", (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+    # 결과 화면 출력
+    cv2.imshow("A-PAS: Intelligent Trajectory Prediction", frame)
+    
+    # 'q' 누르면 종료
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
 
-                prev_y[track_id] = norm_y
-
-        # 3. 상황판 출력
-        if danger_detected:
-            # 빨간 배경 + 경고
-            cv2.rectangle(annotated_frame, (0, 0), (frame_w, 60), (0, 0, 255), -1)
-            cv2.putText(annotated_frame, f"WARNING: {warning_message}", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
-        elif pedestrian_detected:
-            # 노란 배경 + 보행자 주의
-            cv2.rectangle(annotated_frame, (0, 0), (400, 60), (0, 255, 255), -1)
-            cv2.putText(annotated_frame, "Pedestrian in Zone", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 2)
-        else:
-            # 초록 글씨 + 안전
-            cv2.rectangle(annotated_frame, (0, 0), (200, 60), (0, 0, 0), -1)
-            cv2.putText(annotated_frame, "SAFE", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 2)
-
-        cv2.imshow("A-PAS Final (RTX 5060)", annotated_frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'): break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    main()
+cap.release()
+cv2.destroyAllWindows()
+print("👋 시스템이 안전하게 종료되었습니다.")
