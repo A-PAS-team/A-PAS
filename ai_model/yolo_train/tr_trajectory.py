@@ -17,8 +17,8 @@ os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
 
 # 필수 설정 (본인 영상 해상도에 맞게 수정)
 IMG_W, IMG_H = 1920, 1080 
-SEQ_LENGTH = 5     
-PRED_LENGTH = 3    
+SEQ_LENGTH = 10     
+PRED_LENGTH = 10    
 INPUT_SIZE = 2      
 HIDDEN_SIZE = 128   
 NUM_LAYERS = 2      
