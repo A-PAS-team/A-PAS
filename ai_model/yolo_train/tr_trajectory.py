@@ -8,31 +8,29 @@ import glob
 import os
 
 # ==========================================
-# ⚙️ [설정] 프로젝트 규격에 맞게 고정
+# ⚙️ [설정] 피처 확장 규격 (6개 피처)
 # ==========================================
 TRAIN_DATA_DIR = "data/Training"
 VAL_DATA_DIR = "data/Validation"
 MODEL_SAVE_DIR = "models"
 os.makedirs(MODEL_SAVE_DIR, exist_ok=True)
 
-# 해상도 설정 (정규화의 핵심)
 IMG_W, IMG_H = 1920, 1080 
 
-# 하이퍼파라미터 (10프레임 데이터셋 최적화)
-SEQ_LENGTH = 10     # 과거 관찰 기간 (0.5초)
-PRED_LENGTH = 10    # 미래 예측 기간 (0.3초)
-INPUT_SIZE = 2     # x, y 좌표
+# 하이퍼파라미터 업그레이드
+SEQ_LENGTH = 10 
+PRED_LENGTH = 10 
+INPUT_SIZE = 6      # ✅ [x, y, vx, vy, w, h]
 HIDDEN_SIZE = 128  
 NUM_LAYERS = 2     
 BATCH_SIZE = 64
-EPOCHS = 50
+EPOCHS = 100        # 피처가 늘어났으므로 학습 횟수 상향
 LEARNING_RATE = 0.001
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"✅ 충돌 예측 모델 학습 시작 (Device: {device})")
 
 # ==========================================
-# 📊 [데이터셋] 정규화 및 슬라이딩 윈도우
+# 📊 [데이터셋] 6개 피처 자동 계산 및 정규화
 # ==========================================
 class TrajectoryDataset(Dataset):
     def __init__(self, data_dir):
@@ -40,60 +38,62 @@ class TrajectoryDataset(Dataset):
         self.labels = []
         
         csv_files = glob.glob(os.path.join(data_dir, "*.csv"))
-        print(f"📂 {data_dir}에서 데이터를 로드 중입니다...")
+        print(f"📂 {data_dir} 데이터 로드 및 피처 엔지니어링 중...")
 
         for file in csv_files:
             df = pd.read_csv(file)
-            # 객체(track_id)별로 분리해서 학습
             for track_id, group in df.groupby('track_id'):
-                # 1. 좌표 정규화 (0~1 사이 값으로 변환)
-                coords = group[['x_center', 'y_center']].values
-                coords[:, 0] /= IMG_W
-                coords[:, 1] /= IMG_H
+                # 1. 기본 피처 추출
+                data = group[['x_center', 'y_center', 'width', 'height']].values
                 
-                # 최소 길이(SEQ+PRED) 미달인 짧은 데이터는 버림
-                if len(coords) < (SEQ_LENGTH + PRED_LENGTH):
-                    continue
+                if len(data) < (SEQ_LENGTH + PRED_LENGTH): continue
                 
-                # 슬라이딩 윈도우: 1프레임씩 밀어가며 데이터 생성
-                for i in range(len(coords) - SEQ_LENGTH - PRED_LENGTH + 1):
-                    self.sequences.append(coords[i : i + SEQ_LENGTH])
-                    self.labels.append(coords[i + SEQ_LENGTH : i + SEQ_LENGTH + PRED_LENGTH])
+                # 2. 속도(vx, vy) 계산 (차분 활용)
+                # t시점의 속도 = t시점 위치 - (t-1)시점 위치
+                velocity = np.diff(data[:, :2], axis=0, prepend=data[:1, :2])
+                
+                # 3. 6개 피처 결합 [x, y, vx, vy, w, h]
+                features = np.hstack([data[:, :2], velocity, data[:, 2:]])
+                
+                # 4. 정규화 (전체 규격 대비 0~1 사이로)
+                features[:, [0, 2, 4]] /= IMG_W  # x, vx, w
+                features[:, [1, 3, 5]] /= IMG_H  # y, vy, h
+                
+                for i in range(len(features) - SEQ_LENGTH - PRED_LENGTH + 1):
+                    self.sequences.append(features[i : i + SEQ_LENGTH])
+                    # 라벨은 미래의 '좌표(x, y)'만 예측 (충돌 판정용)
+                    self.labels.append(features[i + SEQ_LENGTH : i + SEQ_LENGTH + PRED_LENGTH, :2])
 
         self.sequences = torch.FloatTensor(np.array(self.sequences))
         self.labels = torch.FloatTensor(np.array(self.labels))
-        print(f"✔️ 총 {len(self.sequences)}개의 학습 시퀀스 생성 완료!")
+        print(f"✔️ 시퀀스 생성 완료: {len(self.sequences)}개")
 
     def __len__(self): return len(self.sequences)
     def __getitem__(self, idx): return self.sequences[idx], self.labels[idx]
 
 # ==========================================
-# 🧠 [모델] LSTM (Long Short-Term Memory)
+# 🧠 [모델] LSTM (입력 피처 6개 대응)
 # ==========================================
 class LSTMModel(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers):
         super(LSTMModel, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        # batch_first=True: (Batch, Seq, Feature) 구조 사용
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
         self.fc = nn.Linear(hidden_size, PRED_LENGTH * 2)
 
     def forward(self, x):
         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
         c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
-        
         out, _ = self.lstm(x, (h0, c0))
-        # 마지막 시점의 특징만 사용하여 미래 좌표 예측
         out = self.fc(out[:, -1, :]) 
         return out.view(-1, PRED_LENGTH, 2)
 
 # ==========================================
-# 🚀 [실행] 학습 루프
+# 🚀 [학습] ADE/FDE 지표 측정 포함
 # ==========================================
 train_dataset = TrajectoryDataset(TRAIN_DATA_DIR)
 val_dataset = TrajectoryDataset(VAL_DATA_DIR)
-
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
@@ -108,7 +108,6 @@ for epoch in range(EPOCHS):
     train_loss = 0
     for seqs, targets in train_loader:
         seqs, targets = seqs.to(device), targets.to(device)
-        
         optimizer.zero_grad()
         outputs = model(seqs)
         loss = criterion(outputs, targets)
@@ -118,20 +117,37 @@ for epoch in range(EPOCHS):
     
     model.eval()
     val_loss = 0
+    total_ade = 0
+    total_fde = 0
+    sample_count = 0
+    
     with torch.no_grad():
         for v_seqs, v_targets in val_loader:
             v_seqs, v_targets = v_seqs.to(device), v_targets.to(device)
             v_outputs = model(v_seqs)
             val_loss += criterion(v_outputs, v_targets).item()
+            
+            # --- ADE/FDE 계산 (Pixel 단위 역정규화) ---
+            # 실제 좌표와 예측 좌표의 차이 계산
+            diff = (v_outputs - v_targets)
+            diff[..., 0] *= IMG_W
+            diff[..., 1] *= IMG_H
+            dist = torch.sqrt(torch.sum(diff**2, dim=-1)) # (Batch, PRED_LENGTH)
+            
+            total_ade += torch.mean(dist).item() * v_seqs.size(0)
+            total_fde += torch.mean(dist[:, -1]).item() * v_seqs.size(0)
+            sample_count += v_seqs.size(0)
     
     avg_train_loss = train_loss / len(train_loader)
     avg_val_loss = val_loss / len(val_loader)
+    ade = total_ade / sample_count
+    fde = total_fde / sample_count
     
-    print(f"Epoch [{epoch+1}/{EPOCHS}] Loss: {avg_train_loss:.6f} | Val Loss: {avg_val_loss:.6f}")
+    print(f"Epoch [{epoch+1}/{EPOCHS}] Loss: {avg_train_loss:.5f} | Val: {avg_val_loss:.5f} | ADE: {ade:.2f}px | FDE: {fde:.2f}px")
     
     if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
         torch.save(model.state_dict(), os.path.join(MODEL_SAVE_DIR, "best_trajectory_model.pth"))
-        print(f"⭐ 최고 성능 모델 업데이트! (Val Loss: {best_val_loss:.6f})")
+        print(f"⭐ 최고 성능 모델 업데이트! (ADE: {ade:.2f}px)")
 
-print("\n🎉 학습이 완료되었습니다. 이제 main.py에서 충돌을 감지할 수 있습니다!")
+print("\n🎉 고성능 피처 확장 모델 학습 완료!")
