@@ -1,27 +1,34 @@
-# === Data & Large Files ===
-data/
-raw_data/
-*.mp4
-*.avi
-*.jpg
-*.png
-
-# === AI Models ===
-models/
-*.pt
-*.pth
-*.onnx
-
-# === Python Environment ===
+# 1. 가상환경 및 환경 설정
+a-pas-env/
+.env
+.venv
 __pycache__/
 *.py[cod]
-*$py.class
-a-pas-env/
-venv/
-.env
 
-# === IDE & System ===
-.vscode/
-.idea/
+# 2. 대용량 데이터 및 데이터셋 (가장 중요)
+# data 폴더 내부의 npy, csv 등 대용량 파일 전체 무시
+data/
+dataset/
+raw_data/
+*.npy
+*.csv
+
+# 3. 모델 가중치 및 대용량 바이너리 파일
+# root에 있는 yolov8n.pt 등과 models 폴더 내부 파일 무시
+models/*.pt
+models/*.pth
+yolov8*.pt
+*.pt
+*.pth
+
+# 4. 임시 파일 및 쓰레기통
+trash/
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+.ipynb_checkpoints/
+
+# 5. 로그 및 분석 결과
+logs/
+results/
