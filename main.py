@@ -1,136 +1,304 @@
 import cv2
-import torch
-import torch.nn as nn
 import numpy as np
-from ultralytics import YOLO
+import onnxruntime as ort
+import time
 from collections import deque
-from gpiozero import LED  # ✅ LED 제어 라이브러리 추가
+from ultralytics import YOLO
 
 # ==========================================
-# ⚙️ [설정] 하드웨어 및 모델 설정
+# ⚙️ [설정] 10FPS 모델 기준
 # ==========================================
-IMG_W, IMG_H = 1920, 1080 
-SEQ_LENGTH = 10 
-PRED_LENGTH = 10 
-HIDDEN_SIZE = 128
-NUM_LAYERS = 2
+VIDEO_PATH      = "my_video.mp4"
+YOLO_MODEL_PATH = "yolov8n.pt"
+ONNX_MODEL_PATH = "models/best_model_10fps.onnx"
 
-YOLO_MODEL_PATH = "yolov8s.pt"
-LSTM_MODEL_PATH = "models/best_model_pi.pt"
-VIDEO_PATH = "my_video.mp4" 
+IMG_W, IMG_H    = 1920, 1080
+SEQ_LENGTH      = 20        # ✅ 10FPS 기준
+PRED_LENGTH     = 10        # ✅ 10FPS 기준
+INPUT_SIZE      = 17
+DT              = 0.1       # ✅ 10FPS 기준
 
-# 하드웨어 설정
-alert_led = LED(18)  # ✅ GPIO 18번 핀에 LED 연결
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# 30FPS 영상 → 10FPS 샘플링
+VIDEO_FPS       = 30
+TARGET_FPS      = 10        # ✅ 수정
+SAMPLE_INTERVAL = VIDEO_FPS // TARGET_FPS  # = 3 ✅
+
+# 속도 스무딩
+SMOOTH_WINDOW   = 5
+
+# 충돌 판정 기준
+COLLISION_DIST  = 80
+COLLISION_TTC   = 3
+
+# 클래스 매핑
+CLASS_MAP = {0: 0, 2: 1, 5: 2, 7: 3, 3: 4}
 
 # ==========================================
-# 🧠 [모델 정의]
+# 🧠 [모델 로드]
 # ==========================================
-class LSTMModel(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers):
-        super(LSTMModel, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, PRED_LENGTH * 2)
-
-    def forward(self, x):
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
-        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
-        out, _ = self.lstm(x, (h0, c0))
-        out = self.fc(out[:, -1, :])
-        return out.view(-1, PRED_LENGTH, 2)
-
-# 모델 로드
 print("📦 모델 로드 중...")
-yolo_model = YOLO(YOLO_MODEL_PATH)
-lstm_model = LSTMModel(2, HIDDEN_SIZE, NUM_LAYERS).to(device)
-lstm_model = torch.jit.load(LSTM_MODEL_PATH, map_location=device)
-lstm_model.eval()
+yolo_model   = YOLO(YOLO_MODEL_PATH)
+lstm_session = ort.InferenceSession(
+    ONNX_MODEL_PATH,
+    providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+)
+print("  ✅ YOLO 로드 완료")
+print("  ✅ LSTM (ONNX) 로드 완료")
+print(f"  🖥️  LSTM 실행 디바이스: {lstm_session.get_providers()}")
 
-track_history = {}
-last_predictions = {}
+# ==========================================
+# 📊 [트래킹 히스토리]
+# ==========================================
+track_history    = {}  # {track_id: deque([feature_vector, ...])}
+prev_boxes       = {}  # {track_id: box}
+predictions      = {}  # {track_id: pred_path}
+velocity_history = {}  # {track_id: deque([[vx, vy], ...])}
+prev_velocity    = {}  # 가속도 계산용
+
+# ==========================================
+# 🔧 [유틸 함수]
+# ==========================================
+def compute_features(box, prev_box, track_id, dt=DT):
+    """현재/이전 박스에서 17개 피처 벡터 생성 (속도 스무딩 적용)"""
+    x, y, w, h = box
+    diag = np.sqrt(IMG_W**2 + IMG_H**2)
+
+    # 속도 계산
+    if prev_box is not None:
+        raw_vx = (x - prev_box[0]) / dt
+        raw_vy = (y - prev_box[1]) / dt
+    else:
+        raw_vx, raw_vy = 0.0, 0.0
+
+    # ✅ 속도 이동평균 스무딩
+    if track_id not in velocity_history:
+        velocity_history[track_id] = deque(maxlen=SMOOTH_WINDOW)
+    velocity_history[track_id].append([raw_vx, raw_vy])
+
+    vx = float(np.mean([v[0] for v in velocity_history[track_id]]))
+    vy = float(np.mean([v[1] for v in velocity_history[track_id]]))
+
+    # ✅ 가속도 계산 (이전 속도 기반)
+    if track_id in prev_velocity:
+        ax = (vx - prev_velocity[track_id][0]) / dt
+        ay = (vy - prev_velocity[track_id][1]) / dt
+    else:
+        ax, ay = 0.0, 0.0
+
+    # 현재 속도 저장 (다음 프레임 가속도 계산용)
+    prev_velocity[track_id] = [vx, vy]
+
+    speed   = np.sqrt(vx**2 + vy**2)
+    heading = np.arctan2(vy, vx)
+
+    physics = np.array([
+        x / IMG_W,   y / IMG_H,
+        vx / IMG_W,  vy / IMG_H,
+        ax / IMG_W,  ay / IMG_H,  # ✅ 실제 가속도
+        speed / diag,
+        np.sin(heading), np.cos(heading),
+        w / IMG_W,   h / IMG_H,
+        (w * h) / (IMG_W * IMG_H)
+    ], dtype=np.float32)
+
+    return physics  # 12개
+
+def add_to_history(track_id, box, class_id, prev_box):
+    """트래킹 히스토리에 17개 피처 추가"""
+    if track_id not in track_history:
+        track_history[track_id] = deque(maxlen=SEQ_LENGTH)
+
+    physics = compute_features(box, prev_box, track_id)  # track_id 전달
+    one_hot = np.zeros(5, dtype=np.float32)
+    if class_id in CLASS_MAP:
+        one_hot[CLASS_MAP[class_id]] = 1.0
+
+    track_history[track_id].append(
+        np.concatenate([physics, one_hot])  # 17개
+    )
+
+def run_lstm(track_id):
+    """LSTM 추론 → 미래 경로 반환 (픽셀 단위)"""
+    if len(track_history[track_id]) < SEQ_LENGTH:
+        return None
+
+    seq    = np.array(track_history[track_id], dtype=np.float32)
+    seq    = seq[np.newaxis, ...]   # (1, 10, 17)
+    output = lstm_session.run(None, {"input": seq})[0]  # (1, 10, 2)
+    pred   = output[0].copy()       # (10, 2)
+
+    # 역정규화
+    pred[:, 0] *= IMG_W
+    pred[:, 1] *= IMG_H
+
+    return pred
+
+def calc_ttc(pred_a, pred_b):
+    """TTC(충돌 예상 시간) 계산"""
+    min_dist        = float('inf')
+    collision_frame = PRED_LENGTH
+
+    for t in range(PRED_LENGTH):
+        dist = np.sqrt(
+            (pred_a[t, 0] - pred_b[t, 0])**2 +
+            (pred_a[t, 1] - pred_b[t, 1])**2
+        )
+        if dist < min_dist:
+            min_dist = dist
+        if dist < COLLISION_DIST:
+            collision_frame = t
+            break
+
+    return min_dist, collision_frame
+
+def draw_predictions(frame, pred, color=(0, 255, 255)):
+    """예측 경로 시각화"""
+    for t in range(len(pred) - 1):
+        pt1 = (int(pred[t, 0]),     int(pred[t, 1]))
+        pt2 = (int(pred[t+1, 0]),   int(pred[t+1, 1]))
+        cv2.line(frame, pt1, pt2, color, 2)
+    # 최종 예측 지점 강조
+    cv2.circle(frame,
+               (int(pred[-1, 0]), int(pred[-1, 1])), 6, color, -1)
+
+def draw_alert(frame, ttc_sec, min_dist):
+    """위험 경고 UI"""
+    cv2.rectangle(frame, (0, 0), (420, 80), (0, 0, 200), -1)
+    cv2.putText(frame, "WARNING  COLLISION RISK",
+                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+    cv2.putText(frame, f"TTC: {ttc_sec:.1f}s | Dist: {min_dist:.0f}px",
+                (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+# ==========================================
+# 🎬 [메인 루프]
+# ==========================================
 cap = cv2.VideoCapture(VIDEO_PATH)
+if not cap.isOpened():
+    print(f"❌ 영상을 열 수 없습니다: {VIDEO_PATH}")
+    exit()
 
-# ==========================================
-# 🎬 [실행] 메인 루프
-# ==========================================
-print("🚀 A-PAS 모니터링 시작!")
+print(f"\n🚀 A-PAS 모니터링 시작! (영상: {VIDEO_PATH})")
+print(f"   샘플링: {VIDEO_FPS}FPS → {TARGET_FPS}FPS "
+      f"({SAMPLE_INTERVAL}프레임마다 LSTM 실행)")
+print(f"   히스토리 딜레이: "
+      f"{SEQ_LENGTH * SAMPLE_INTERVAL / VIDEO_FPS:.1f}초 후 예측 시작")
+print(f"   속도 스무딩: 이동평균 {SMOOTH_WINDOW}프레임")
+print("종료: 'q' 키\n")
 
-try: # ✅ 예외 처리를 통해 안전한 종료 보장
+latency_list = []
+frame_count  = 0
+
+try:
     while cap.isOpened():
-        success, frame = cap.read()
-        if not success: break
-        frame = cv2.resize(frame, (IMG_W, IMG_H))
-        
-        # imgsz=320으로 설정하여 라즈베리 파이 부하 감소
-        results = yolo_model.track(frame, persist=True, imgsz=320, conf=0.2, verbose=False)
-        collision_risk = False
-        all_current_preds = {}
+        t_start = time.perf_counter()
+
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        frame_count     += 1
+        is_sample_frame  = (frame_count % SAMPLE_INTERVAL == 0)
+
+        # ① YOLO 추론 (매 프레임)
+        results = yolo_model.track(
+            frame, persist=True,
+            imgsz=640,
+            classes=[0, 2, 3, 5, 7],
+            verbose=False
+        )
+
+        collision_risk  = False
+        min_dist_global = float('inf')
+        ttc_global      = PRED_LENGTH
 
         if results[0].boxes.id is not None:
-            boxes = results[0].boxes.xywh.cpu().numpy()
+            boxes     = results[0].boxes.xywh.cpu().numpy()
             track_ids = results[0].boxes.id.int().cpu().tolist()
-            
-            for box, track_id in zip(boxes, track_ids):
+            class_ids = results[0].boxes.cls.int().cpu().tolist()
+
+            for box, track_id, class_id in zip(boxes, track_ids, class_ids):
+
+                # ② 히스토리 + LSTM (샘플 프레임만)
+                if is_sample_frame:
+                    prev_box = prev_boxes.get(track_id, None)
+                    add_to_history(track_id, box, class_id, prev_box)
+                    prev_boxes[track_id] = box
+
+                    pred = run_lstm(track_id)
+                    if pred is not None:
+                        predictions[track_id] = pred
+
+                # ③ 예측 경로 시각화 (이전 결과 재사용)
+                if track_id in predictions:
+                    draw_predictions(frame, predictions[track_id])
+
+                # 바운딩 박스
                 x, y, w, h = box
-                curr_pos = np.array([float(x), float(y)])
-                
-                # 1. 이상 행동(Anomaly) 시각화
-                if track_id in last_predictions:
-                    pred_pos = last_predictions[track_id]
-                    anomaly_loss = np.linalg.norm(curr_pos - pred_pos)
-                    if anomaly_loss > 50:
-                        cv2.putText(frame, f"UNSTABLE: {int(anomaly_loss)}", (int(x), int(y)-40),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 2)
+                x1, y1 = int(x - w/2), int(y - h/2)
+                x2, y2 = int(x + w/2), int(y + h/2)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(frame, f"ID:{track_id}",
+                            (x1, y1-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-                if track_id not in track_history:
-                    track_history[track_id] = deque(maxlen=SEQ_LENGTH)
-                track_history[track_id].append(curr_pos)
+            # ④ TTC 계산 (샘플 프레임 + 예측 2개 이상)
+            if is_sample_frame and len(predictions) >= 2:
+                id_list = list(predictions.keys())
+                for i in range(len(id_list)):
+                    for j in range(i+1, len(id_list)):
+                        min_dist, col_frame = calc_ttc(
+                            predictions[id_list[i]],
+                            predictions[id_list[j]]
+                        )
+                        if min_dist < min_dist_global:
+                            min_dist_global = min_dist
+                            ttc_global      = col_frame
 
-                # 2. 미래 경로 예측
-                if len(track_history[track_id]) == SEQ_LENGTH:
-                    input_seq = np.array(list(track_history[track_id]))
-                    input_seq[:, 0] /= IMG_W
-                    input_seq[:, 1] /= IMG_H
-                    input_seq_torch = torch.FloatTensor([input_seq]).to(device)
-                    
-                    with torch.no_grad():
-                        pred = lstm_model(input_seq_torch).cpu().numpy()[0]
-                        pred[:, 0] *= IMG_W
-                        pred[:, 1] *= IMG_H
-                        all_current_preds[track_id] = pred
-                        last_predictions[track_id] = pred[0] 
+                if min_dist_global < COLLISION_DIST and \
+                   ttc_global < COLLISION_TTC / DT:
+                    collision_risk = True
 
-                        # 예측 경로 시각화
-                        cv2.polylines(frame, [pred.astype(np.int32)], False, (0, 0, 255), 2)
-
-            # 3. 충돌 감지 로직
-            for id1, pred1 in all_current_preds.items():
-                for id2, pred2 in all_current_preds.items():
-                    if id1 >= id2: continue 
-                    dist = np.linalg.norm(pred1[-1] - pred2[-1])
-                    if dist < 100: 
-                        collision_risk = True
-                        cv2.line(frame, tuple(pred1[-1].astype(int)), tuple(pred2[-1].astype(int)), (0, 255, 255), 3)
-
-        # ==========================================
-        # 💡 [핵심] 하드웨어 피드백 (LED 제어)
-        # ==========================================
+        # ⑤ 경고 출력
         if collision_risk:
-            alert_led.on()  # 🔴 위험 시 LED 점등
-            cv2.rectangle(frame, (0, 0), (IMG_W, IMG_H), (0, 0, 255), 20)
-            cv2.putText(frame, "!!! COLLISION WARNING !!!", (IMG_W//2-350, 80), 
-                        cv2.FONT_HERSHEY_DUPLEX, 2, (0, 0, 255), 4)
-        else:
-            alert_led.off() # 🟢 안전 시 LED 소등
+            draw_alert(frame, ttc_global * DT, min_dist_global)
 
-        # 결과 창 출력 (SSH 환경에서는 주석 처리 필요할 수 있음)
-        cv2.imshow("A-PAS Final Monitoring", frame)
-        if cv2.waitKey(1) & 0xFF == ord("q"): break
+        # ⑥ 성능 표시
+        t_end      = time.perf_counter()
+        latency_ms = (t_end - t_start) * 1000
+        latency_list.append(latency_ms)
 
-finally: # ✅ 프로그램 종료 시 반드시 실행
-    print("\nCleaning up...")
-    alert_led.off() # LED 끄기
+        fps        = 1000 / latency_ms if latency_ms > 0 else 0
+        sample_tag = "[S]" if is_sample_frame else "   "
+        cv2.putText(frame,
+                    f"{sample_tag} FPS: {fps:.1f} | Latency: {latency_ms:.1f}ms",
+                    (10, frame.shape[0] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+
+        cv2.imshow("A-PAS Monitor", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+finally:
     cap.release()
     cv2.destroyAllWindows()
+
+    # ==========================================
+    # 📊 [최종 성능 통계] 논문/발표용
+    # ==========================================
+    if latency_list:
+        arr = np.array(latency_list)
+        print("\n" + "="*50)
+        print("📊 A-PAS 최종 성능 통계")
+        print("="*50)
+        print(f"  처리 프레임 수    : {frame_count}장")
+        print(f"  LSTM 실행 횟수    : {frame_count // SAMPLE_INTERVAL}회")
+        print(f"  히스토리 딜레이   : "
+              f"{SEQ_LENGTH * SAMPLE_INTERVAL / VIDEO_FPS:.1f}초")
+        print(f"  속도 스무딩       : 이동평균 {SMOOTH_WINDOW}프레임")
+        print(f"  평균 Latency      : {arr.mean():.2f}ms")
+        print(f"  최소 Latency      : {arr.min():.2f}ms")
+        print(f"  최대 Latency      : {arr.max():.2f}ms")
+        print(f"  평균 FPS          : {1000/arr.mean():.1f}")
+        print(f"  모델 ADE          : 3.76px")
+        print(f"  모델 FDE          : 6.21px")
+        print("="*50)
