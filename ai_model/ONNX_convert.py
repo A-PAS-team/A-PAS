@@ -6,10 +6,10 @@ import torch.nn as nn
 # ⚙️ [설정] tr_trajectory.py와 동일해야 함
 # ==========================================
 INPUT_SIZE  = 17
-HIDDEN_SIZE = 128
+HIDDEN_SIZE = 256
 NUM_LAYERS  = 2
-SEQ_LENGTH  = 10
-PRED_LENGTH = 10
+SEQ_LENGTH  = 60
+PRED_LENGTH = 30
 
 MODEL_PATH  = "models/best_trajectory_model.pth"
 ONNX_PATH   = "models/best_trajectory_model.onnx"

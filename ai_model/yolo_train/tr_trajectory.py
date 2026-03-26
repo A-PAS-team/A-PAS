@@ -4,6 +4,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import os
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 # ==========================================
@@ -11,12 +13,12 @@ import matplotlib.pyplot as plt
 # ==========================================
 IMG_W, IMG_H = 1920, 1080
 INPUT_SIZE   = 17
-HIDDEN_SIZE  = 128
+HIDDEN_SIZE  = 256
 NUM_LAYERS   = 2
-SEQ_LENGTH   = 10
-PRED_LENGTH  = 10
+SEQ_LENGTH   = 60
+PRED_LENGTH  = 30
 BATCH_SIZE   = 64
-EPOCHS       = 100
+EPOCHS       = 150
 LR           = 0.001
 EARLY_STOP_PATIENCE = 15   # 10에포크 동안 개선 없으면 종료
 MODEL_DIR    = "models"
@@ -30,10 +32,10 @@ print(f"🖥️  Device: {device}")
 # ==========================================
 def load_data():
     print("📂 데이터 로드 중...")
-    X_train = np.load("data/X_train_final.npy")
-    y_train = np.load("data/y_train_final.npy")
-    X_val   = np.load("data/X_val_final.npy")
-    y_val   = np.load("data/y_val_final.npy")
+    X_train = np.load("data/Training/X_train_30fps.npy")
+    y_train = np.load("data/Training/y_train_30fps.npy")
+    X_val   = np.load("data/Validation/X_val_30fps.npy")
+    y_val   = np.load("data/Validation/y_val_30fps.npy")
     print(f"  ✅ Train: {X_train.shape} / Val: {X_val.shape}")
 
     train_loader = DataLoader(
@@ -177,6 +179,8 @@ def train():
 
         # LR Scheduler 업데이트
         scheduler.step(avg_val)
+        current_lr = optimizer.param_groups[0]['lr']
+        print(f"  📉 현재 LR: {current_lr:.6f}")
 
         # 최고 모델 저장
         if avg_val < best_val_loss:

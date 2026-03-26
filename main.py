@@ -10,17 +10,17 @@ from ultralytics import YOLO
 # ==========================================
 VIDEO_PATH      = "my_video.mp4"
 YOLO_MODEL_PATH = "yolov8n.pt"
-ONNX_MODEL_PATH = "models/best_trajectory_model.onnx"
+ONNX_MODEL_PATH = "models/best_trajectory_model.ONNX"
 
 IMG_W, IMG_H    = 1920, 1080
-SEQ_LENGTH      = 10
-PRED_LENGTH     = 10
+SEQ_LENGTH      = 60
+PRED_LENGTH     = 30
 INPUT_SIZE      = 17
 DT              = 0.1       # 10FPS 기준
 
 # 30FPS 영상 → 10FPS 샘플링
 VIDEO_FPS       = 30
-TARGET_FPS      = 10
+TARGET_FPS      = 30
 SAMPLE_INTERVAL = VIDEO_FPS // TARGET_FPS  # = 3
 
 # 속도 스무딩
