@@ -81,9 +81,10 @@ A-PAS/
 │   │   ├── 🐍 tr_trajectory_10fps.py   # LSTM 학습 (10FPS, SEQ=20)
 │   │   ├── 🐍 tr_trajectory_30fps.py   # LSTM 학습 (30FPS, SEQ=60)
 │   │   └── 🐍 ONNX_convert.py          # PyTorch → ONNX 변환
-│   └── 📂 data/                        # 추출된 NPY 데이터 저장 폴더
-│       ├── Training/                   # 학습용 NPY 파일
-│       └── Validation/                 # 검증용 NPY 파일
+│   |── 📂 data/                        # 추출된 NPY 데이터 저장 폴더
+│   |   ├── Training/                   # 학습용 NPY 파일
+│   |   └── Validation/                 # 검증용 NPY 파일
+|   └── 🐍 optimize_model.py            # LSTM 모델 경량화 (동적 양자화)
 ├── 📂 models/                          # 학습 결과물 저장 (모델 구조별 분리)
 │   ├── 📂 Self_LSTM/                   # ✅ 기본 LSTM (완료)
 │   │   ├── 🧠 best_model_10fps.pth     # 10FPS 모델 가중치
@@ -96,7 +97,6 @@ A-PAS/
 │   ├── 🐍 camera.py                    # 카메라 영상 수집 모듈
 │   └── 🐍 alert.py                     # LED / 부저 제어 모듈
 ├── 🐍 main.py                          # 전체 시스템 실행 파일 (Raspberry Pi)
-├── 🐍 optimize_model.py                # LSTM 모델 경량화 (동적 양자화)
 ├── 📄 requirements.txt                 # PC 환경 설정
 ├── 📄 requirements-pi.txt              # 라즈베리파이 환경 설정
 └── 📄 README.md                        # 설명서
@@ -141,7 +141,7 @@ pip install -r requirements-pi.txt
 원본 영상(`.mp4`)에서 YOLO ByteTrack으로 객체를 추적하여 CSV를 생성합니다.
 
 ```bash
-cd ai_model/.npy
+cd ai_model/npy_processing
 
 python video_to_csv.py
 # 결과: ai_model/data/csv/*.csv 생성
@@ -151,6 +151,7 @@ python video_to_csv.py
 CSV 데이터에서 17개 피처를 추출하고 학습용 NPY 파일을 생성합니다.
 
 ```bash
+cd ai_model/npy_processing
 # [방법 A] 10FPS 샘플링 (SEQ=20, PRED=10)
 python csv_to_npy_10fps.py
 # 결과: data/Training/X_train_10fps.npy, y_train_10fps.npy 등
@@ -188,6 +189,7 @@ python tr_trajectory_30fps.py
 학습된 모델을 추론용 ONNX 포맷으로 변환합니다.
 
 ```bash
+cd ai_model/trajectory
 python ONNX_convert.py
 # 결과: models/Self_LSTM/best_model_10fps.onnx
 ```
@@ -235,7 +237,7 @@ python main.py
 <br>
 
 ## ⚠️ 주의사항
-* 전원 어댑터는 반드시 **27W (5V 5A) 이상 PD 어댑터**를 사용하세요. 27W 이하는 Hailo-8 NPU 피크 전력 부족으로 불안정할 수 있습니다.
+* 전원 어댑터는 반드시 **27W (5V 5A) 이상 PD 어댑터**를 사용하세요. 27W 미만은 Hailo-8 NPU 피크 전력 부족으로 불안정할 수 있습니다.
 * MicroSD는 **V30 등급 이상** (SanDisk Extreme 또는 공식 Raspberry Pi 카드)을 권장합니다.
 * `models/` 폴더 내 `.pth`, `.onnx` 파일은 `.gitignore`에 의해 Git에서 제외됩니다. 라즈베리 파이로 직접 전송하세요.
 * `data/Training/`, `data/Validation/` 폴더 내 NPY 파일은 용량이 크므로 Git에서 제외됩니다.
