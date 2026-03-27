@@ -1,5 +1,6 @@
-# A-PAS (AI-based Pedestrian Alert System)
+# 🚶‍♂️ A-PAS (AI-based Pedestrian Alert System)
 ### 보행자 중심의 엣지 AI 스마트 횡단보도 경고 시스템
+> 한국공학대학교(TUKOREA) 전자공학부 졸업작품 (2026.01 ~ 2026.07, 진행 중)
 
 ![Python](https://img.shields.io/badge/Python-3.x-blue)
 ![Raspberry Pi](https://img.shields.io/badge/Hardware-Raspberry%20Pi%205-C51A4A)
@@ -17,11 +18,12 @@
 > * **Vision-only Solution**: 라이다 없이 영상과 AI만으로 정밀 충돌 예측
 > * **Edge AI**: 클라우드 없이 독립적으로 작동하는 고성능 엣지 컴퓨팅 구현
 
-**개발 기간**: 2026.01.07 ~ 2026.07 (약 7개월)
+* **개발 기간**: 2026.01.07 ~ 2026.07 (약 7개월, 진행 중)
+
 
 <br>
 
-## 시스템 아키텍처 (System Architecture)
+## 🏗 시스템 아키텍처 (System Architecture)
 
 ### Hardware Configuration
 | 구분 | 장비명 | 사양 | 용도 |
@@ -39,6 +41,7 @@
 | --- | --- | --- |
 | **YOLOv8n** (객체 탐지) | Hailo-8 NPU | 이미지 병렬 연산 → NPU 최적화 |
 | **Trajectory LSTM** (경로 예측) | Raspberry Pi 5 CPU | 순차적 시계열 연산 → CPU 적합 |
+
 
 ### Technology Stack
 * **AI Model**
@@ -67,7 +70,7 @@ HDMI-to-CSI 캡처 보드
 
 <br>
 
-## 폴더 구조 (Directory Structure)
+## 📂 폴더 구조 (Directory Structure)
 ```text
 A-PAS/
 ├── 📂 raw_data/                        # 원본 영상 모아두는 곳 (학습의 시작점)
@@ -107,9 +110,7 @@ A-PAS/
 ## 시작하기 (Getting Started)
 이 프로젝트는 **학습용 PC (Windows)** 와 **실행용 라즈베리 파이 (Embedded)** 의 환경 설정 방법이 다릅니다.
 
-### 1. 가상환경 생성 (공통)
-프로젝트 루트 경로에서 가상환경을 생성합니다.
-
+**1. 가상환경 생성 (공통)**
 ```bash
 # 가상환경 생성
 python -m venv a-pas-env
