@@ -78,6 +78,7 @@ A-PAS/
 │   ├── 📂 npy_processing/              # NPY 데이터 생성 관련 코드
 │   │   ├── 🐍 video_to_csv.py          # 영상 → CSV 변환 (YOLOv8 ByteTrack 기반)
 │   │   ├── 🐍 jpg_to_csv.py            # JPG 이미지 → NPY 변환
+|   |   ├── 🐍 merge_npy.py             # NPY 통합 및 재분할
 │   │   ├── 🐍 csv_to_npy_10fps.py      # CSV → NPY 변환 (10FPS 샘플링)
 │   │   └── 🐍 csv_to_npy_30fps.py      # CSV → NPY 변환 (30FPS 원본)
 │   ├── 📂 trajectory/                  # LSTM 모델 학습 관련 코드
@@ -87,6 +88,8 @@ A-PAS/
 │   |── 📂 data/                        # 추출된 NPY 데이터 저장 폴더
 │   |   ├── Training/                   # 학습용 NPY 파일
 │   |   └── Validation/                 # 검증용 NPY 파일
+|   ├── 🐍 comprehensive_eval.py    # 종합 성능 평가
+|   |── 🐍 visualize_trajectory.py  # 예측 경로 시각화
 |   └── 🐍 optimize_model.py            # LSTM 모델 경량화 (동적 양자화)
 ├── 📂 models/                          # 학습 결과물 저장 (모델 구조별 분리)
 │   ├── 📂 Self_LSTM/                   # ✅ 기본 LSTM (완료)
