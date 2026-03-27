@@ -25,7 +25,7 @@ MODEL_DIR           = "models"
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR  = os.path.join(BASE_DIR, "data", "Training")
+DATA_DIR  = os.path.join(BASE_DIR, "..", "data", "Training")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"🖥️  Device: {device}")
@@ -34,11 +34,11 @@ print(f"🖥️  Device: {device}")
 # 📊 [데이터 로드]
 # ==========================================
 def load_data():
-    print("📂 데이터 로드 중... [10FPS]")
-    X_train = np.load(os.path.join(DATA_DIR, "X_train_10fps.npy"))
-    y_train = np.load(os.path.join(DATA_DIR, "y_train_10fps.npy"))
-    X_val   = np.load(os.path.join(DATA_DIR, "X_val_10fps.npy"))
-    y_val   = np.load(os.path.join(DATA_DIR, "y_val_10fps.npy"))
+    print("📂 loading data... [10FPS]")
+    X_train = np.load(os.path.join(DATA_DIR, "X_train_10fps_jamsil.npy"))
+    y_train = np.load(os.path.join(DATA_DIR, "y_train_10fps_jamsil.npy"))
+    X_val   = np.load(os.path.join(DATA_DIR, "X_val_10fps_jamsil.npy"))
+    y_val   = np.load(os.path.join(DATA_DIR, "y_val_10fps_jamsil.npy"))
     print(f"  ✅ Train: {X_train.shape} / Val: {X_val.shape}")
 
     train_loader = DataLoader(
@@ -92,7 +92,7 @@ def save_plots(history):
     axes[2].legend(); axes[2].grid(True)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(MODEL_DIR, "training_report_10fps.png"), dpi=150)
+    plt.savefig(os.path.join(MODEL_DIR, "training_report_10fps_jamsil.png"), dpi=150)
     plt.close()
     print("  📊 그래프 저장됨: models/training_report_10fps.png")
 
@@ -165,7 +165,7 @@ def train():
             best_val_loss    = avg_val
             early_stop_count = 0
             torch.save(model.state_dict(),
-                       os.path.join(MODEL_DIR, "best_model_10fps.pth"))
+                       os.path.join(MODEL_DIR, "best_model_10fps_jamsil.pth"))
             print(f"  ⭐ Best model saved! (Val: {avg_val:.5f} | ADE: {ade:.2f}px)")
         else:
             early_stop_count += 1

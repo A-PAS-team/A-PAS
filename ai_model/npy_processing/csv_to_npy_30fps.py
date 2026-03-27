@@ -9,8 +9,8 @@ from sklearn.model_selection import train_test_split
 # ⚙️ [설정] 30FPS 원본
 # ==========================================
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
-CSV_FOLDER   = os.path.join(BASE_DIR, "data", "csv")
-OUTPUT_DIR   = os.path.join(BASE_DIR, "data", "Training")
+CSV_FOLDER   = os.path.join(BASE_DIR, "..", "data")
+OUTPUT_DIR   = os.path.join(BASE_DIR, "..","data", "Training")
 
 IMG_W, IMG_H = 1920, 1080
 DIAG         = np.sqrt(IMG_W**2 + IMG_H**2)
@@ -114,10 +114,10 @@ X_train, X_val, y_train, y_val = train_test_split(
 )
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-np.save(os.path.join(OUTPUT_DIR, "X_train_30fps.npy"), X_train)
-np.save(os.path.join(OUTPUT_DIR, "y_train_30fps.npy"), y_train)
-np.save(os.path.join(OUTPUT_DIR, "X_val_30fps.npy"),   X_val)
-np.save(os.path.join(OUTPUT_DIR, "y_val_30fps.npy"),   y_val)
+np.save(os.path.join(OUTPUT_DIR, "X_train_30fps_jamsil.npy"), X_train)
+np.save(os.path.join(OUTPUT_DIR, "y_train_30fps_jamsil.npy"), y_train)
+np.save(os.path.join(OUTPUT_DIR, "X_val_30fps_jamsil.npy"),   X_val)
+np.save(os.path.join(OUTPUT_DIR, "y_val_30fps_jamsil.npy"),   y_val)
 
 print(f"\n💾 저장 완료!")
 print(f"  Train: {X_train.shape}")
