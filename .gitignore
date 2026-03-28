@@ -6,10 +6,6 @@ __pycache__/
 *.py[cod]
 
 # 2. 대용량 데이터 (폴더 전체 무시)
-raw_data/
-dataset/
-data/Training/
-data/Validation/
 ai_model/data/     # ai_model 안에도 data 폴더가 있다면 추가
 
 # 3. 대용량 파일 확장자
@@ -20,12 +16,14 @@ ai_model/data/     # ai_model 안에도 data 폴더가 있다면 추가
 # 4. 모델 가중치 및 결과물
 models/Self_LSTM/*.pth
 models/Self_LSTM/*.onnx
-models/Self_LSTM/*.png
+models/Self_LSTM/eval/10fps*.png
+models/Self_LSTM/eval/30fps*.png
 *.pt               # YOLO 모델 파일 등
 
 # 5. 테스트 영상 및 이미지
 *.mp4
 *.avi
+*.pt
 
 # 6. 임시/테스트 파일 및 IDE 설정
 trash/
