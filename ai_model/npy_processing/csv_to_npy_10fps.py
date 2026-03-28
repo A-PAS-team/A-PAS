@@ -8,17 +8,16 @@ from sklearn.model_selection import train_test_split
 # ==========================================
 # ⚙️ [설정] 30FPS CSV → 10FPS 샘플링
 # ==========================================
-BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
-CSV_FOLDER   = os.path.join(BASE_DIR,  "..", "data", "CARLA_csv")
-OUTPUT_DIR   = os.path.join(BASE_DIR, "..", "data", "Training")
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR  = os.path.join(BASE_DIR, "..", "data", "Training")
 
 IMG_W, IMG_H = 1920, 1080
 DIAG         = np.sqrt(IMG_W**2 + IMG_H**2)
 
-SEQ_LENGTH   = 20       # 2.0초 @ 10FPS
-PRED_LENGTH  = 10       # 1.0초 @ 10FPS
-DT           = 0.1      # 10FPS
-SAMPLE_RATE  = 3        # 30FPS → 10FPS
+SEQ_LENGTH  = 20    # 2.0초 @ 10FPS
+PRED_LENGTH = 10    # 1.0초 @ 10FPS
+DT          = 0.1   # 10FPS
+SAMPLE_RATE = 3     # 30FPS → 10FPS
 
 CLASS_MAP = {0: 0, 2: 1, 5: 2, 7: 3, 3: 4}
 
@@ -41,8 +40,15 @@ def get_features(group):
     df['ax'] = df['vx'].diff() / actual_dt
     df['ay'] = df['vy'].diff() / actual_dt
 
-    # 트래킹 끊김 처리
-    df.loc[df['frame_diff'] > 6, ['vx', 'vy', 'ax', 'ay']] = 0
+    # 트래킹 끊김 처리 - gap 행 + 다음 행도 제로화
+    mask      = df['frame_diff'] > 6
+    next_mask = mask.shift(-1).fillna(False)
+    combined  = mask | next_mask
+    df.loc[combined, 'vx'] = 0
+    df.loc[combined, 'vy'] = 0
+    df.loc[combined, 'ax'] = 0
+    df.loc[combined, 'ay'] = 0
+
     df = df.replace([np.inf, -np.inf], 0)
     df = df.fillna(0)
 
@@ -72,60 +78,96 @@ def get_features(group):
 
     return features
 
+
+def process_csv_folder(csv_folder, tag):
+    """CSV 폴더 하나를 처리하여 X, y 반환"""
+    csv_files = glob.glob(os.path.join(csv_folder, "*.csv"))
+    if not csv_files:
+        print(f"  ❌ CSV 파일 없음: {csv_folder}")
+        return None, None
+
+    print(f"\n{'='*55}")
+    print(f"📂 [{tag}] {len(csv_files)}개 CSV 처리 중...")
+    print(f"{'='*55}")
+
+    X, y = [], []
+
+    for csv_path in tqdm(csv_files, desc=f"  {tag}"):
+        df = pd.read_csv(csv_path)
+        filename = os.path.splitext(os.path.basename(csv_path))[0]
+
+        # ✅ Global Track ID: 파일명 + track_id 조합으로 고유 ID 생성
+        df['global_track_id'] = filename + "_" + df['track_id'].astype(str)
+
+        for gid, group in df.groupby('global_track_id'):
+            if len(group) < (SEQ_LENGTH + PRED_LENGTH) * SAMPLE_RATE:
+                continue
+
+            full_features = get_features(group)
+            if len(full_features) < SEQ_LENGTH + PRED_LENGTH:
+                continue
+
+            for i in range(len(full_features) - SEQ_LENGTH - PRED_LENGTH + 1):
+                X.append(full_features[i: i + SEQ_LENGTH])
+                y.append(full_features[i + SEQ_LENGTH: i + SEQ_LENGTH + PRED_LENGTH, :2])
+
+    if not X:
+        print(f"  ❌ [{tag}] 추출된 시퀀스 없음")
+        return None, None
+
+    X = np.array(X, dtype=np.float32)
+    y = np.array(y, dtype=np.float32)
+
+    # ✅ 클리핑 적용
+    X[:, :, 2] = np.clip(X[:, :, 2], -2.0, 2.0)   # vx
+    X[:, :, 3] = np.clip(X[:, :, 3], -2.0, 2.0)   # vy
+    X[:, :, 4] = np.clip(X[:, :, 4], -1.0, 1.0)   # ax
+    X[:, :, 5] = np.clip(X[:, :, 5], -1.0, 1.0)   # ay
+    y = np.clip(y, 0, 1)
+
+    print(f"  ✅ [{tag}] 시퀀스: {len(X):,}개")
+    print(f"     vx 표준편차: {X[:,:,2].std():.4f} | ax 표준편차: {X[:,:,4].std():.4f}")
+    print(f"     NaN: {np.isnan(X).sum()} | inf: {np.isinf(X).sum()}")
+
+    return X, y
+
+
 # ==========================================
 # 🚀 [메인]
 # ==========================================
-print("📂 CSV 파일 로드 중... [10FPS 샘플링 버전]")
-csv_files = glob.glob(os.path.join(CSV_FOLDER, "*.csv"))
-if not csv_files:
-    print("❌ CSV 파일이 없습니다!")
-    exit()
+if __name__ == "__main__":
+    print("🚀 A-PAS CSV → NPY 변환 시작! [10FPS + Global Track ID + Clipping]")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-print(f"  ✅ {len(csv_files)}개 파일 발견")
-df_raw = pd.concat(
-    [pd.read_csv(f) for f in tqdm(csv_files, desc="파일 읽기")],
-    ignore_index=True
-)
-print(f"  ✅ 총 {len(df_raw):,}행 로드 완료")
+    # ==========================================
+    # 📂 소스별 처리 - 경로만 여기서 관리
+    # ==========================================
+    sources = {
+        "jamsil"  : os.path.join(BASE_DIR, "..", "data", "jamsil_DDP_csv"),
+        "jaehoon" : os.path.join(BASE_DIR, "..", "data", "Jaehoon_csv"),
+        "carla"   : os.path.join(BASE_DIR, "..", "data", "CARLA_csv"),
+    }
 
-X, y = [], []
-track_groups = df_raw.groupby('track_id')
-print(f"\n⚙️ 시퀀스 생성 중... (총 {len(track_groups)}개 트랙)")
+    for tag, csv_folder in sources.items():
+        if not os.path.exists(csv_folder):
+            print(f"\n⏭️  {tag} 폴더 없음, 스킵: {csv_folder}")
+            continue
 
-for track_id, group in tqdm(track_groups, desc="시퀀스 추출"):
-    if len(group) < (SEQ_LENGTH + PRED_LENGTH) * SAMPLE_RATE:
-        continue
+        X, y = process_csv_folder(csv_folder, tag)
+        if X is None:
+            continue
 
-    full_features = get_features(group)
-    if len(full_features) < SEQ_LENGTH + PRED_LENGTH:
-        continue
+        # 소스별 저장 (train/val 분할)
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=0.1, random_state=42, shuffle=True
+        )
 
-    for i in range(len(full_features) - SEQ_LENGTH - PRED_LENGTH + 1):
-        X.append(full_features[i: i + SEQ_LENGTH])
-        y.append(full_features[i + SEQ_LENGTH: i + SEQ_LENGTH + PRED_LENGTH, :2])
+        np.save(os.path.join(OUTPUT_DIR, f"X_train_10fps_{tag}.npy"), X_train)
+        np.save(os.path.join(OUTPUT_DIR, f"y_train_10fps_{tag}.npy"), y_train)
+        np.save(os.path.join(OUTPUT_DIR, f"X_val_10fps_{tag}.npy"),   X_val)
+        np.save(os.path.join(OUTPUT_DIR, f"y_val_10fps_{tag}.npy"),   y_val)
 
-if not X:
-    print("❌ 추출된 시퀀스가 없습니다!")
-    exit()
+        print(f"  💾 저장: X_train_10fps_{tag}.npy → {X_train.shape}")
 
-X = np.array(X, dtype=np.float32)
-y = np.clip(np.array(y, dtype=np.float32), 0, 1)
-
-print(f"\n📊 전체 시퀀스: {len(X):,}개")
-
-X_train, X_val, y_train, y_val = train_test_split(
-    X, y, test_size=0.1, random_state=42
-)
-
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-np.save(os.path.join(OUTPUT_DIR, "X_train_10fps_CARLA.npy"), X_train)
-np.save(os.path.join(OUTPUT_DIR, "y_train_10fps_CARLA.npy"), y_train)
-np.save(os.path.join(OUTPUT_DIR, "X_val_10fps_CARLA.npy"),   X_val)
-np.save(os.path.join(OUTPUT_DIR, "y_val_10fps_CARLA.npy"),   y_val)
-
-print(f"\n💾 저장 완료!")
-print(f"  Train: {X_train.shape}")
-print(f"  Val  : {X_val.shape}")
-print(f"  ax 표준편차: {X_train[:,:,4].std():.4f}")
-print(f"  NaN: {np.isnan(X_train).sum()} | inf: {np.isinf(X_train).sum()}")
-print(f"\n🎉 완료! {OUTPUT_DIR} 확인하세요.")
+    print("\n🎉 전체 변환 완료!")
+    print("📋 다음 단계: python merge_npy.py")
