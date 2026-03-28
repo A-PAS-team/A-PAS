@@ -18,7 +18,7 @@ NUM_LAYERS          = 2
 SEQ_LENGTH          = 20
 PRED_LENGTH         = 10
 BATCH_SIZE          = 64
-EPOCHS              = 100
+EPOCHS              = 150
 LR                  = 0.001
 EARLY_STOP_PATIENCE = 15
 MODEL_DIR           = "models"
@@ -35,10 +35,10 @@ print(f"🖥️  Device: {device}")
 # ==========================================
 def load_data():
     print("📂 loading data... [10FPS]")
-    X_train = np.load(os.path.join(DATA_DIR, "X_train_10fps_jamsil.npy"))
-    y_train = np.load(os.path.join(DATA_DIR, "y_train_10fps_jamsil.npy"))
-    X_val   = np.load(os.path.join(DATA_DIR, "X_val_10fps_jamsil.npy"))
-    y_val   = np.load(os.path.join(DATA_DIR, "y_val_10fps_jamsil.npy"))
+    X_train = np.load(os.path.join(DATA_DIR, "X_train_final_10fps_v1.npy"))
+    y_train = np.load(os.path.join(DATA_DIR, "y_train_final_10fps_v1.npy"))
+    X_val   = np.load(os.path.join(DATA_DIR, "X_val_final_10fps_v1.npy"))
+    y_val   = np.load(os.path.join(DATA_DIR, "y_val_final_10fps_v1.npy"))
     print(f"  ✅ Train: {X_train.shape} / Val: {X_val.shape}")
 
     train_loader = DataLoader(
@@ -92,9 +92,9 @@ def save_plots(history):
     axes[2].legend(); axes[2].grid(True)
 
     plt.tight_layout()
-    plt.savefig(os.path.join(MODEL_DIR, "training_report_10fps_jamsil.png"), dpi=150)
+    plt.savefig(os.path.join(MODEL_DIR, "training_report_final_10fps_v1.png"), dpi=150)
     plt.close()
-    print("  📊 그래프 저장됨: models/training_report_10fps.png")
+    print("  📊 그래프 저장됨: models/training_report_final_10fps_v1.png")
 
 # ==========================================
 # 🚀 [학습]
@@ -165,7 +165,7 @@ def train():
             best_val_loss    = avg_val
             early_stop_count = 0
             torch.save(model.state_dict(),
-                       os.path.join(MODEL_DIR, "best_model_10fps_jamsil.pth"))
+                       os.path.join(MODEL_DIR, "best_model_final_10fps_v1.pth"))
             print(f"  ⭐ Best model saved! (Val: {avg_val:.5f} | ADE: {ade:.2f}px)")
         else:
             early_stop_count += 1

@@ -12,15 +12,15 @@ import random
 # ==========================================
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR    = os.path.join(BASE_DIR, "data", "Training")
-MODEL_PATH  = os.path.join(BASE_DIR, "..", "models", "Self_LSTM", "best_model_10fps_jamsil.pth")
+MODEL_PATH  = os.path.join(BASE_DIR, "..", "models", "Self_LSTM", "best_model_final_30fps_v1.pth")
 OUTPUT_DIR  = os.path.join(BASE_DIR, "..", "models", "Self_LSTM")
 
 IMG_W, IMG_H    = 1920, 1080
 INPUT_SIZE      = 17
-HIDDEN_SIZE     = 128
+HIDDEN_SIZE     = 256
 NUM_LAYERS      = 2
-SEQ_LENGTH      = 20
-PRED_LENGTH     = 10
+SEQ_LENGTH      = 60
+PRED_LENGTH     = 30
 
 CLASS_NAMES  = ["Person", "Car", "Bus", "Truck", "Motorcycle"]
 CLASS_COLORS = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2"]
@@ -53,8 +53,8 @@ class TrajectoryLSTM(nn.Module):
 # 📂 [데이터 로드]
 # ==========================================
 print("📂 데이터 로드 중...")
-X_val = np.load(os.path.join(DATA_DIR, "X_val_10fps_jamsil.npy"))
-y_val = np.load(os.path.join(DATA_DIR, "y_val_10fps_jamsil.npy"))
+X_val = np.load(os.path.join(DATA_DIR, "X_val_final_30fps_v1.npy"))
+y_val = np.load(os.path.join(DATA_DIR, "y_val_final_30fps_v1.npy"))
 print(f"  ✅ Val: {X_val.shape}")
 
 # ==========================================
@@ -104,7 +104,7 @@ pred_px[:, :, 0] *= IMG_W;  pred_px[:, :, 1] *= IMG_H
 n_classes = len(selected)
 fig, axes = plt.subplots(n_classes, SAMPLES_PER_CLASS,
                          figsize=(SAMPLES_PER_CLASS * 5, n_classes * 4))
-fig.suptitle("A-PAS LSTM - Trajectory Prediction vs Ground Truth (10FPS_jamsil)",
+fig.suptitle("A-PAS LSTM - Trajectory Prediction vs Ground Truth (30FPS_v1)",
              fontsize=14, fontweight='bold')
 
 # axes가 1D일 경우 대비
@@ -173,7 +173,7 @@ for row, (name, indices) in enumerate(selected.items()):
         sample_idx += 1
 
 plt.tight_layout()
-save_path = os.path.join(OUTPUT_DIR, "trajectory_visualization_10fps_jamsil.png")
+save_path = os.path.join(OUTPUT_DIR, "trajectory_visualization_final_30fps_v1.png")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 plt.savefig(save_path, dpi=150, bbox_inches='tight')
 plt.close()

@@ -12,16 +12,16 @@ import random
 # ==========================================
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR    = os.path.join(BASE_DIR, "data", "Training")
-MODEL_PATH  = os.path.join(BASE_DIR, "..", "models", "Self_LSTM", "best_model_10fps_jamsil.pth")
+MODEL_PATH  = os.path.join(BASE_DIR, "..", "models", "Self_LSTM", "best_model_final_30fps_v1.pth")
 OUTPUT_DIR  = os.path.join(BASE_DIR, "..", "models", "Self_LSTM", "eval")
 
 IMG_W, IMG_H    = 1920, 1080
 INPUT_SIZE      = 17
-HIDDEN_SIZE     = 128
+HIDDEN_SIZE     = 256
 NUM_LAYERS      = 2
-SEQ_LENGTH      = 20
-PRED_LENGTH     = 10
-DT              = 0.1
+SEQ_LENGTH      = 60
+PRED_LENGTH     = 30
+DT              = 1/30
 
 CLASS_NAMES  = ["Person", "Car", "Bus", "Truck", "Motorcycle"]
 CLASS_COLORS = ["#4C72B0", "#DD8452", "#55A868", "#C44E52", "#8172B2"]
@@ -51,8 +51,8 @@ class TrajectoryLSTM(nn.Module):
 # 📂 [Load]
 # ==========================================
 print("Loading data & model...")
-X_val = np.load(os.path.join(DATA_DIR, "X_val_10fps_jamsil.npy"))
-y_val = np.load(os.path.join(DATA_DIR, "y_val_10fps_jamsil.npy"))
+X_val = np.load(os.path.join(DATA_DIR, "X_val_final_30fps_v1.npy"))
+y_val = np.load(os.path.join(DATA_DIR, "y_val_final_30fps_v1.npy"))
 
 model = TrajectoryLSTM().to(device)
 model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
@@ -183,7 +183,7 @@ for thr in [5, 10, 15, 20, 30]:
 # ==========================================
 print("\nSaving graphs...")
 fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-fig.suptitle("A-PAS LSTM - Comprehensive Evaluation (10FPS_jamsil)", fontsize=14, fontweight='bold')
+fig.suptitle("A-PAS LSTM - Comprehensive Evaluation (30FPS_v1)", fontsize=14, fontweight='bold')
 
 w = 0.35
 
@@ -270,7 +270,7 @@ ax.set_xlabel("ADE Threshold (px)"); ax.set_ylabel("Ratio (%)")
 ax.grid(True, alpha=0.3)
 
 plt.tight_layout()
-save_path = os.path.join(OUTPUT_DIR, "comprehensive_eval_10fps_jamsil.png")
+save_path = os.path.join(OUTPUT_DIR, "comprehensive_eval_final_30fps_v1.png")
 plt.savefig(save_path, dpi=150, bbox_inches='tight')
 plt.close()
 
