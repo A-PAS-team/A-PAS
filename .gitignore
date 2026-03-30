@@ -18,6 +18,19 @@ models/Self_LSTM/*.pth
 models/Self_LSTM/*.onnx
 models/Self_LSTM/eval/10fps*.png
 models/Self_LSTM/eval/30fps*.png
+models/Attention/*.pth
+models/Attention/*.onnx
+models/Attention/eval/10fps*.png
+models/Attention/eval/30fps*.png
+models/Attention_residual/*.pth
+models/Attention_residual/*.onnx
+models/Attention_residual/eval/10fps*.png
+models/Attention_residual/eval/30fps*.png
+models/residual/*.pth
+models/residual/*.onnx
+models/residual/eval/10fps*.png
+models/residual/eval/30fps*.png
+
 *.pt               # YOLO 모델 파일 등
 
 # 5. 테스트 영상 및 이미지
