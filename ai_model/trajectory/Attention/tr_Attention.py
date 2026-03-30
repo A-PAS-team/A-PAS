@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 # ==========================================
 parser = argparse.ArgumentParser(description="A-PAS Attention LSTM Training")
 parser.add_argument('--fps',     type=int, default=30, choices=[10, 30])
-parser.add_argument('--version', type=str, default="v1_cctv", choices=["v1_cctv", "v2_cctv_carla"])
+parser.add_argument('--version', type=str, default="v2_cctv_carla", choices=["v1_cctv", "v2_cctv_carla"])
 parser.add_argument('--hidden',  type=int, default=None)
 parser.add_argument('--epochs',  type=int, default=150)
 parser.add_argument('--patience',type=int, default=15)
