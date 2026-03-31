@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 # ⚙️ [인자 파싱]
 # ==========================================
 parser = argparse.ArgumentParser(description="A-PAS Residual LSTM Training")
-parser.add_argument('--fps',     type=int, default=10, choices=[10, 30])
+parser.add_argument('--fps',     type=int, default=30, choices=[10, 30])
 parser.add_argument('--version', type=str, default="v2_cctv_carla", choices=["v1_cctv", "v2_cctv_carla"])
 parser.add_argument('--hidden',  type=int, default=None)
 parser.add_argument('--epochs',  type=int, default=150)
