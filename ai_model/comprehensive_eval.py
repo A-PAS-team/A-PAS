@@ -12,10 +12,10 @@ import random
 # ⚙️ [인자 파싱]
 # ==========================================
 parser = argparse.ArgumentParser(description="A-PAS Comprehensive Evaluation")
-parser.add_argument('--fps',     type=int, default=10, choices=[10, 30])
+parser.add_argument('--fps',     type=int, default=30, choices=[10, 30])
 parser.add_argument('--version', type=str, default="v2_cctv_carla",
                     choices=["v1_cctv", "v2_cctv_carla"])
-parser.add_argument('--model',   type=str, default="attention",
+parser.add_argument('--model',   type=str, default="residual",
                     choices=["self", "attention", "residual", "attention_residual"])
 args = parser.parse_args()
 
