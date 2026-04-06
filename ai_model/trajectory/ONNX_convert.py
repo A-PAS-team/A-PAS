@@ -1,9 +1,10 @@
-# convert_to_onnx.py
+# ONNX_convert_residual.py
 import torch
 import torch.nn as nn
+import os
 
 # ==========================================
-# ⚙️ [설정] tr_trajectory.py와 동일해야 함
+# ⚙️ [설정] tr_residual_30fps.py와 동일
 # ==========================================
 INPUT_SIZE  = 17
 HIDDEN_SIZE = 256
@@ -11,13 +12,13 @@ NUM_LAYERS  = 2
 SEQ_LENGTH  = 60
 PRED_LENGTH = 30
 
-MODEL_PATH  = "models/best_trajectory_model.pth"
-ONNX_PATH   = "models/best_trajectory_model.onnx"
+MODEL_PATH = "models/Residual/best_model_30fps_v2_cctv_carla.pth"
+ONNX_PATH  = "models/Residual/best_model_30fps.onnx"
 
 # ==========================================
-# 🧠 [모델 정의] tr_trajectory.py와 완전 동일
+# 🧠 [모델 정의] 학습 코드와 완전 동일
 # ==========================================
-class TrajectoryLSTM(nn.Module):
+class ResidualLSTM(nn.Module):
     def __init__(self):
         super().__init__()
         self.lstm = nn.LSTM(
@@ -28,37 +29,40 @@ class TrajectoryLSTM(nn.Module):
 
     def forward(self, x):
         _, (h_n, _) = self.lstm(x)
-        return self.fc(h_n[-1]).view(-1, PRED_LENGTH, 2)
+        offset   = self.fc(h_n[-1]).view(-1, PRED_LENGTH, 2)
+        last_pos = x[:, -1, :2].unsqueeze(1)  # 마지막 관찰 위치
+        return last_pos + offset               # Residual: 위치 + 오프셋
 
 # ==========================================
 # 🔄 [변환]
 # ==========================================
 def convert():
-    device = torch.device("cpu")  # ONNX 변환은 CPU로
+    device = torch.device("cpu")
 
-    # 1. 모델 로드
-    print("📦 모델 로드 중...")
-    model = TrajectoryLSTM().to(device)
+    print("📦 Residual LSTM 모델 로드 중...")
+    model = ResidualLSTM().to(device)
     model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
     model.eval()
-    print("  ✅ 모델 로드 완료")
+    print(f"  ✅ 로드 완료: {MODEL_PATH}")
+    print(f"  📐 파라미터: {sum(p.numel() for p in model.parameters()):,}개")
 
-    # 2. 더미 입력 생성 (shape 확인용)
-    dummy_input = torch.randn(1, SEQ_LENGTH, INPUT_SIZE)  # (batch=1, 20, 17)
+    # 더미 입력
+    dummy_input = torch.randn(1, SEQ_LENGTH, INPUT_SIZE)
     print(f"  📐 입력 shape: {dummy_input.shape}")
 
-    # 3. ONNX 변환
+    # ONNX 변환
     print("🔄 ONNX 변환 중...")
+    os.makedirs(os.path.dirname(ONNX_PATH), exist_ok=True)
     torch.onnx.export(
         model,
         dummy_input,
         ONNX_PATH,
         export_params=True,
-        opset_version=18,        # ← 12에서 18로 변경
+        opset_version=18,
         do_constant_folding=True,
         input_names=["input"],
         output_names=["output"],
-        dynamo=False,            # ← 추가 (dynamic_axes 경고 제거)
+        dynamo=False,
         dynamic_axes={
             "input":  {0: "batch_size"},
             "output": {0: "batch_size"}
@@ -66,17 +70,29 @@ def convert():
     )
     print(f"  ✅ 변환 완료: {ONNX_PATH}")
 
-    # 4. 검증
+    # 검증
     import onnx
-    model_onnx = onnx.load(ONNX_PATH)
-    onnx.checker.check_model(model_onnx)
-    print("  ✅ ONNX 모델 검증 통과!")
+    onnx_model = onnx.load(ONNX_PATH)
+    onnx.checker.check_model(onnx_model)
+    print("  ✅ ONNX 검증 통과!")
 
-    # 5. 입출력 shape 확인
-    print("\n📊 모델 입출력 정보")
-    print(f"  입력: (batch, {SEQ_LENGTH}, {INPUT_SIZE})")
-    print(f"  출력: (batch, {PRED_LENGTH}, 2)")
-    print(f"\n🎉 완료! {ONNX_PATH} 파일을 확인하세요.")
+    # ONNX Runtime 추론 테스트
+    import onnxruntime as ort
+    session = ort.InferenceSession(ONNX_PATH, providers=["CPUExecutionProvider"])
+    onnx_output = session.run(None, {"input": dummy_input.numpy()})[0]
+
+    with torch.no_grad():
+        torch_output = model(dummy_input).numpy()
+
+    diff = abs(torch_output - onnx_output).max()
+    size_mb = os.path.getsize(ONNX_PATH) / (1024 * 1024)
+
+    print(f"\n📊 검증 결과")
+    print(f"  입력 : (batch, {SEQ_LENGTH}, {INPUT_SIZE})")
+    print(f"  출력 : (batch, {PRED_LENGTH}, 2)")
+    print(f"  PyTorch ↔ ONNX 최대 오차: {diff:.8f}")
+    print(f"  파일 크기: {size_mb:.2f}MB")
+    print(f"\n🎉 완료! {ONNX_PATH} → RPi5로 전송하세요.")
 
 if __name__ == "__main__":
     convert()
