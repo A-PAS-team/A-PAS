@@ -21,8 +21,8 @@ from ultralytics import YOLO
 # ⚙️ [설정] 30FPS Residual LSTM
 # ==========================================
 # --- 입력 소스 ---
-VIDEO_PATH      = "my_video.mp4"       # 또는 CARLA HDMI 캡처
-YOLO_MODEL_PATH = "yolov8n.pt"         # Hailo 사용 시 .hef로 교체
+VIDEO_PATH      = "045.mp4"       # 또는 CARLA HDMI 캡처
+YOLO_MODEL_PATH = "yolov8s.pt"         # Hailo 사용 시 .hef로 교체
 ONNX_MODEL_PATH = "models/Residual/best_model_30fps.onnx"
 
 # --- 해상도 ---
@@ -295,8 +295,9 @@ try:
         # ① YOLO 추론 (매 프레임)
         results = yolo_model.track(
             frame, persist=True,
-            imgsz=640,
+            imgsz=1280,
             classes=[0, 2, 3, 5, 7],
+            conf=0.15,
             verbose=False
         )
 
