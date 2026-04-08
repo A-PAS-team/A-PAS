@@ -21,7 +21,7 @@ from ultralytics import YOLO
 # ⚙️ [설정] 30FPS Residual LSTM
 # ==========================================
 # --- 입력 소스 ---
-VIDEO_PATH      = "045.mp4"       # 또는 CARLA HDMI 캡처
+VIDEO_PATH      = "test_video1.mp4"       # 또는 CARLA HDMI 캡처
 YOLO_MODEL_PATH = "yolov8s.pt"         # Hailo 사용 시 .hef로 교체
 ONNX_MODEL_PATH = "models/Residual/best_model_30fps.onnx"
 
