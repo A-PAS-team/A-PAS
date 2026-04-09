@@ -1,21 +1,35 @@
-#raspberry에 다운
+# ==========================================
+# A-PAS 프로젝트 - Raspberry Pi 5 배포 환경
+# Hailo-8 AI HAT+ (26 TOPS) + ONNX Runtime
+# ==========================================
+# 설치: pip install -r requirements-pi.txt
 
-# --- AI 엔진 (TensorFlow Lite) ---
-# 라즈베리 파이 + Coral TPU 조합의 필수 핵심 엔진
-tflite-runtime
+# --- AI 추론 엔진 ---
+onnxruntime               # LSTM 궤적 예측 모델 추론 (CPU)
 
 # --- 영상 처리 ---
-# headless: 모니터 없이 돌아가는 가벼운 버전 (GUI 기능 제외)
-opencv-python-headless
+opencv-python-headless    # 카메라/HDMI 캡처 영상 처리 (GUI 미포함 경량 버전)
+Pillow                    # 이미지 전처리 (리사이즈, 크롭)
 
-# --- 하드웨어 제어 (GPIO) ---
-# 중요! 라즈베리 파이 5 전용 GPIO 라이브러리 (기존 RPi.GPIO 대체)
-rpi-lgpio
+# --- YOLOv8 (Hailo-8 미사용 시 fallback) ---
+ultralytics               # YOLOv8 ByteTrack 추론 + 추적
 
-# --- 데이터 처리 및 유틸 ---
-numpy
-psutil      # CPU 온도, 메모리 사용량 체크용
-requests    # (선택) 서버나 관제실로 데이터 보낼 때 필요
-pyserial    # (선택) 아두이노 등 외부 장치와 통신할 때 필요
+# --- 하드웨어 제어 (GPIO / LED / 부저) ---
+rpi-lgpio                 # RPi 5 전용 GPIO (부저 제어)
+rpi_ws281x                # WS2812B LED Strip 제어
 
-# 다운받는 법 pip install -r requirements_pi.txt
+# --- 데이터 연산 ---
+numpy                     # 배열/행렬 연산
+
+# --- 시스템 모니터링 ---
+psutil                    # CPU 온도, 메모리 사용량 체크
+
+# --- 통신 (선택) ---
+# requests                # 관제실 API 전송 시
+# pyserial                # 아두이노 시리얼 통신 시
+
+# ==========================================
+# 참고: Hailo-8 SDK (hailort, hailo-platform)는
+# Hailo 공식 apt 저장소에서 별도 설치
+# sudo apt install hailort hailo-tappas-core
+# ==========================================
