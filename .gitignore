@@ -16,18 +16,22 @@ ai_model/data/     # ai_model 안에도 data 폴더가 있다면 추가
 # 4. 모델 가중치 및 결과물
 models/Self_LSTM/*.pth
 models/Self_LSTM/*.onnx
+models/Self_LSTM/*.png
 models/Self_LSTM/eval/10fps*.png
 models/Self_LSTM/eval/30fps*.png
 models/Attention/*.pth
 models/Attention/*.onnx
+models/Attention/*.png
 models/Attention/eval/10fps*.png
 models/Attention/eval/30fps*.png
 models/Attention_residual/*.pth
 models/Attention_residual/*.onnx
+models/Attention_residual/*.png
 models/Attention_residual/eval/10fps*.png
 models/Attention_residual/eval/30fps*.png
 models/residual/*.pth
 models/residual/*.onnx
+models/residual/*.png
 models/residual/eval/10fps*.png
 models/residual/eval/30fps*.png
 
