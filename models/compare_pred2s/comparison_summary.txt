@@ -1,0 +1,13 @@
+A-PAS 2초 예측 모델 비교
+SEQ=30(1s) → PRED=60(2s) @ 30FPS
+
+지표           |   Residual |   Attn+Res |       차이
+------------------------------------------------
+ADE          |     2.57px |     2.43px |  -0.14px
+FDE(2s)      |     3.68px |     3.50px |  -0.18px
+ADE@0.5s     |     2.12px |     2.10px |  -0.02px
+ADE@1.0s     |     2.31px |     2.21px |  -0.10px
+ADE@1.5s     |     2.43px |     2.30px |  -0.13px
+ADE@2.0s     |     2.57px |     2.43px |  -0.14px
+
+Winner (ADE): Attention+Residual
