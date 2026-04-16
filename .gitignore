@@ -34,13 +34,22 @@ models/residual/*.onnx
 models/residual/*.png
 models/residual/eval/10fps*.png
 models/residual/eval/30fps*.png
+ai_model/yolo_train/carla_data/images/*.jpg
+ai_model/yolo_train/carla_data/labels/*.txt
+ai_model/yolo_train/carla_data/labels_backup/*.txt
 
+ai_model/yolo_train/carla_dataset/images/train/*.jpg
+ai_model/yolo_train/carla_dataset/images/val/*.jpg
+ai_model/yolo_train/carla_dataset/labels/train/*.txt
+ai_model/yolo_train/carla_dataset/labels/val/*.txt
+ai_model/yolo_train/carla_dataset/data.yaml
 *.pt               # YOLO 모델 파일 등
 
 # 5. 테스트 영상 및 이미지
 *.mp4
 *.avi
 *.pt
+*.jpg
 
 # 6. 임시/테스트 파일 및 IDE 설정
 trash/
