@@ -1,3 +1,7 @@
+# ==========================================
+# A-PAS .gitignore
+# ==========================================
+
 # 1. 가상환경 및 환경 설정
 a-pas-env/
 .env
@@ -5,53 +9,41 @@ a-pas-env/
 __pycache__/
 *.py[cod]
 
-# 2. 대용량 데이터 (폴더 전체 무시)
-ai_model/data/     # ai_model 안에도 data 폴더가 있다면 추가
+# 2. 대용량 데이터 폴더
+ai_model/data/
+raw_data/
+dataset/
 
 # 3. 대용량 파일 확장자
 *.npy
 *.csv
 *.xlsx
 
-# 4. 모델 가중치 및 결과물
-models/Self_LSTM/*.pth
-models/Self_LSTM/*.onnx
-models/Self_LSTM/*.png
-models/Self_LSTM/eval/10fps*.png
-models/Self_LSTM/eval/30fps*.png
-models/Attention/*.pth
-models/Attention/*.onnx
-models/Attention/*.png
-models/Attention/eval/10fps*.png
-models/Attention/eval/30fps*.png
-models/Attention_residual/*.pth
-models/Attention_residual/*.onnx
-models/Attention_residual/*.png
-models/Attention_residual/eval/10fps*.png
-models/Attention_residual/eval/30fps*.png
-models/residual/*.pth
-models/residual/*.onnx
-models/residual/*.png
-models/residual/eval/10fps*.png
-models/residual/eval/30fps*.png
-ai_model/yolo_train/carla_data/images/*.jpg
-ai_model/yolo_train/carla_data/labels/*.txt
-ai_model/yolo_train/carla_data/labels_backup/*.txt
+# 4. 모델 가중치 및 학습 결과 (구조별 모든 폴더에 일괄 적용)
+models/**/*.pth
+models/**/*.onnx
+models/**/*.png
+models/**/eval/*.png
+*.pt                # YOLO 모델 파일 등
 
-ai_model/yolo_train/carla_dataset/images/train/*.jpg
-ai_model/yolo_train/carla_dataset/images/val/*.jpg
-ai_model/yolo_train/carla_dataset/labels/train/*.txt
-ai_model/yolo_train/carla_dataset/labels/val/*.txt
-ai_model/yolo_train/carla_dataset/data.yaml
-*.pt               # YOLO 모델 파일 등
+# 5. YOLO fine-tuning 데이터 및 결과
+ai_model/yolo_train/carla_data/
+ai_model/yolo_train/carla_dataset/
+ai_model/yolo_train/runs/
+ai_model/yolo_train/*.cache
 
-# 5. 테스트 영상 및 이미지
+# 6. 테스트 영상
 *.mp4
 *.avi
-*.pt
-*.jpg
 
-# 6. 임시/테스트 파일 및 IDE 설정
+# 7. 이미지 (학습 데이터용)
+*.jpg
+*.jpeg
+# 단, README 이미지는 유지 (필요 시 주석 해제)
+# !docs/*.png
+# !README_images/*.png
+
+# 8. 임시/테스트 파일 및 IDE 설정
 trash/
 .DS_Store
 Thumbs.db
@@ -59,6 +51,6 @@ Thumbs.db
 .idea/
 .ipynb_checkpoints/
 
-# 7. 로그 및 결과
+# 9. 로그 및 결과
 logs/
 results/
