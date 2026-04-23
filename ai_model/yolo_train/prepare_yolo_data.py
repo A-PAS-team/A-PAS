@@ -35,20 +35,20 @@ from collections import Counter
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 입력: 팀원에게 받은 원본 데이터
-INPUT_DIR = os.path.join(BASE_DIR, "carla_data")
+INPUT_DIR = os.path.join(BASE_DIR, "carla_data_v5")
 IMG_DIR   = os.path.join(INPUT_DIR, "images")
 LBL_DIR   = os.path.join(INPUT_DIR, "labels")
 
 # 출력: YOLO 학습용 데이터셋
-OUTPUT_DIR = os.path.join(BASE_DIR, "carla_dataset")
+OUTPUT_DIR = os.path.join(BASE_DIR, "carla_dataset_v5")
 
 # Train/Val 비율
 VAL_RATIO  = 0.1
 RANDOM_SEED = 42
 
 # A-PAS 클래스 정의
-CLASS_NAMES = {0: "person", 1: "car", 2: "motorcycle", 3: "bus", 4: "truck"}
-NUM_CLASSES = 5
+CLASS_NAMES = {0: "person", 1: "car", 2: "motorcycle", 3: "large_vehicle"}
+NUM_CLASSES = 4
 
 # ==========================================
 # 🔍 [Step 1] 데이터 검증
@@ -292,8 +292,7 @@ names:
   0: person
   1: car
   2: motorcycle
-  3: bus
-  4: truck
+  3: large_vehicle
 """
 
     with open(yaml_path, "w") as f:

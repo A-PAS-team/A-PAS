@@ -28,7 +28,7 @@ from collections import Counter
 # ⚙️ [설정]
 # ==========================================
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
-INPUT_DIR = os.path.join(BASE_DIR, "carla_data")
+INPUT_DIR = os.path.join(BASE_DIR, "carla_data_v2")
 IMG_DIR   = os.path.join(INPUT_DIR, "images")
 LBL_DIR   = os.path.join(INPUT_DIR, "labels")
 
@@ -395,7 +395,7 @@ def main():
     parser.add_argument(
         "--mode",
         choices=["visual", "fix", "stats", "all"],
-        default="all",
+        default="stats",
         help="visual: 시각화 검증 | fix: 누락 보완 | stats: 통계 | all: 전부"
     )
     args = parser.parse_args()
