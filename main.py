@@ -16,6 +16,7 @@ import onnxruntime as ort
 import time
 from collections import deque
 from ultralytics import YOLO
+from collections import defaultdict, deque, Counter
 
 # ==========================================
 # ⚙️ [설정] 30FPS Residual LSTM
@@ -23,15 +24,15 @@ from ultralytics import YOLO
 # --- 입력 소스 ---
 VIDEO_PATH      = "test_video5.mp4"       # 또는 CARLA HDMI 캡처
 YOLO_MODEL_PATH = "best_v6.pt"         # Hailo 사용 시 .hef로 교체
-ONNX_MODEL_PATH = "models/Residual/best_model_30fps.onnx"
+ONNX_MODEL_PATH = "models/Residual/0427/best_residual_30fps_pred2s.onnx"
 
 # --- 해상도 ---
 IMG_W, IMG_H = 1920, 1080
 DIAG         = np.sqrt(IMG_W**2 + IMG_H**2)
 
 # --- 모델 설정 (30FPS) ---
-SEQ_LENGTH   = 60          # 2.0초 관찰
-PRED_LENGTH  = 30          # 1.0초 예측
+SEQ_LENGTH   = 30          # 1.0초 관찰
+PRED_LENGTH  = 60          # 2.0초 예측
 INPUT_SIZE   = 17
 DT           = 1 / 30      # 30FPS
 
@@ -54,6 +55,9 @@ COLLISION_TTC  = 3         # 초
 # --- 클래스 매핑 ---
 CLASS_MAP    = {0: 0, 1: 1, 2: 2, 3: 3}
 CLASS_NAMES  = {0: "Person", 1: "Car", 2: "Motorcycle", 3: "Large_Veh"}
+
+class_votes = defaultdict(lambda: deque(maxlen=10))
+prev_frames = {}  # 갭 체크를 위해 track_id별 마지막 관측 프레임을 저장
 
 # ==========================================
 # 🧠 [모델 로드]
@@ -253,9 +257,16 @@ def trigger_alert(collision_risk, ttc_sec):
 # ==========================================
 # 🧹 [트랙 정리]
 # ==========================================
-def cleanup_stale_tracks(active_ids):
-    """현재 프레임에 없는 트랙 제거 (메모리 관리)"""
-    stale = [tid for tid in track_history if tid not in active_ids]
+def cleanup_stale_tracks(active_ids, frame_count, max_lost=60):
+    """
+    active_ids에 없더라도 최근 60프레임 이내면 유지
+    → ByteTrack의 track_buffer와 동일한 기준
+    """
+    stale = [
+        tid for tid in track_history
+        if tid not in active_ids
+        and (frame_count - prev_frames.get(tid, 0)) > max_lost
+    ]
     for tid in stale:
         track_history.pop(tid, None)
         prev_boxes.pop(tid, None)
@@ -263,8 +274,11 @@ def cleanup_stale_tracks(active_ids):
         velocity_history.pop(tid, None)
         prev_velocity.pop(tid, None)
         track_classes.pop(tid, None)
+        prev_frames.pop(tid, None)
+        class_votes.pop(tid, None)
+    
 
-def merge_duplicate_tracks(predictions, prev_boxes, merge_dist=50):
+def merge_duplicate_tracks(predictions, prev_boxes, merge_dist=100):
     """같은 객체에 두 개 track_id 붙은 경우 하나만 남김"""
     ids = list(predictions.keys())
     to_remove = set()
@@ -319,7 +333,7 @@ try:
             classes=[0, 1, 2, 3],
             conf=0.1,                  # [핵심] ByteTrack의 2차 매칭(저신뢰도 박스 활용)을 위해 낮게 설정
             iou=0.3,
-            agnostic_nms=True,
+            agnostic_nms=False,
             verbose=False
         )   
 
@@ -341,16 +355,37 @@ try:
                 x, y, w, h = box
                 
                 # Person(0) 클래스 필터링: 30x30px 미만의 너무 작은 박스는 노이즈일 확률이 큼
-                if class_id == 0 and w * h < 900:   
+                if class_id == 0 and w * h < 400:   
                     continue
                 
+                # --- [추가 1] 다수결 투표 (Majority Voting) ---
+                class_votes[track_id].append(int(class_id))
+                # 최근 10프레임 중 최빈값 클래스 추출
+                voted_class_id = Counter(class_votes[track_id]).most_common(1)[0][0]
+
+                # --- [추가 2] 갭(Gap) 체크 및 Zeroing ---
+                if track_id in prev_frames:
+                    frame_diff = frame_count - prev_frames[track_id]
+                    
+                    if frame_diff > 5:
+                        # 5프레임 초과 갭 발생 시: 기존 속도 기록 초기화
+                        # (기존 main.py의 변수명에 맞게 clear 또는 초기값 할당)
+                        if track_id in velocity_history:
+                            velocity_history[track_id].clear()
+                        if track_id in prev_velocity:
+                            prev_velocity[track_id] = [0.0, 0.0]  # 혹은 del prev_velocity[track_id]
+                            
+                # 현재 프레임 번호 업데이트
+                prev_frames[track_id] = frame_count
+                
+
                 # (옵션) 1-Euro 필터 등 공간적 평활화를 적용한다면 이 위치에서 box 좌표를 스무딩합니다.
                 # 예: x, y, w, h = one_euro_filter(track_id, x, y, w, h)
 
                 # ② 피처 추출 + LSTM (샘플 프레임)
                 if is_sample_frame:
                     prev_box = prev_boxes.get(track_id, None)
-                    add_to_history(track_id, box, class_id, prev_box)
+                    add_to_history(track_id, box, voted_class_id, prev_box)
                     prev_boxes[track_id] = box
 
                     pred = run_lstm(track_id)
@@ -359,7 +394,7 @@ try:
 
                 # ③ 시각화 (디버깅용: ID와 신뢰도 점수를 같이 띄워 추적 안정성 확인)
                 # draw_bbox 함수 내부를 수정하여 conf 값도 같이 표시되게 하면 분석하기 좋습니다.
-                draw_bbox(frame, box, track_id, class_id)
+                draw_bbox(frame, box, track_id, voted_class_id)
                 if track_id in predictions:
                     draw_predictions(frame, predictions[track_id])
 
@@ -380,9 +415,10 @@ try:
                             ttc_global      = col_frame
                             ttc_sec_global  = ttc_sec
 
+                # ← 이 부분 추가
                 if (min_dist_global < COLLISION_DIST and
                     ttc_sec_global < COLLISION_TTC):
-                    collision_risk = True
+                    collision_risk = True       
 
         # ⑤ 경고 출력
         if collision_risk:
@@ -391,7 +427,7 @@ try:
 
         # ⑥ 트랙 정리
         if frame_count % cleanup_interval == 0:
-            cleanup_stale_tracks(active_ids)
+            cleanup_stale_tracks(active_ids, frame_count, max_lost=60)
 
         # 성능 표시
         t_end      = time.perf_counter()
@@ -435,5 +471,5 @@ finally:
         print(f"  최소 Latency   : {arr.min():.2f}ms")
         print(f"  최대 Latency   : {arr.max():.2f}ms")
         print(f"  평균 FPS       : {1000/arr.mean():.1f}")
-        print(f"  모델 ADE       : 2.08px (Residual)")
+        print(f"  모델 ADE       : 2.26px (Residual, 1s→2s)")
         print(f"{'='*55}")

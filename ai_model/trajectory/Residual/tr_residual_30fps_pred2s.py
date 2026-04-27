@@ -28,7 +28,7 @@ BATCH_SIZE          = 64
 EPOCHS              = 200
 LR                  = 0.001
 EARLY_STOP_PATIENCE = 15
-MODEL_DIR           = "models/Residual"
+MODEL_DIR           = "models/Residual/0427"
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -43,10 +43,10 @@ print(f"📐 SEQ={SEQ_LENGTH}({SEQ_LENGTH/30:.1f}s) → PRED={PRED_LENGTH}({PRED
 # ==========================================
 def load_data():
     print("📂 데이터 로드 중... [30FPS, 1s→2s, pred2s]")
-    X_train = np.load(os.path.join(DATA_DIR, "X_train_30fps_pred2s.npy"))
-    y_train = np.load(os.path.join(DATA_DIR, "y_train_30fps_pred2s.npy"))
-    X_val   = np.load(os.path.join(DATA_DIR, "X_val_30fps_pred2s.npy"))
-    y_val   = np.load(os.path.join(DATA_DIR, "y_val_30fps_pred2s.npy"))
+    X_train = np.load(os.path.join(DATA_DIR, "X_train_final_30fps_pred2s_04_04-c.npy"))
+    y_train = np.load(os.path.join(DATA_DIR, "y_train_final_30fps_pred2s_04_04-c.npy"))
+    X_val   = np.load(os.path.join(DATA_DIR, "X_val_final_30fps_pred2s_04_04-c.npy"))
+    y_val   = np.load(os.path.join(DATA_DIR, "y_val_final_30fps_pred2s_04_04-c.npy"))
     print(f"  ✅ Train: {X_train.shape} / Val: {X_val.shape}")
     print(f"  ✅ y shape: {y_train.shape}  (N, {PRED_LENGTH}, 2)")
 

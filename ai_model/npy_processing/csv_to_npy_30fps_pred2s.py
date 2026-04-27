@@ -21,7 +21,7 @@ from sklearn.model_selection import train_test_split
 # ⚙️ [설정] 1초 관찰 → 2초 예측
 # ==========================================
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
-CSV_FOLDER   = os.path.join(BASE_DIR, "..", "data", "csv")
+CSV_FOLDER   = os.path.join(BASE_DIR, "..", "data", "csv_carla")
 OUTPUT_DIR   = os.path.join(BASE_DIR, "..", "data", "Training")
 
 IMG_W, IMG_H = 1920, 1080
@@ -36,7 +36,7 @@ DT           = 1/30
 VEL_CLIP     = 2.0
 ACC_CLIP     = 1.0
 
-CLASS_MAP = {0: 0, 2: 1, 5: 2, 7: 3, 3: 4}
+CLASS_MAP = {0: 0, 1: 1, 2: 2, 3: 3}
 
 # ==========================================
 # 🔍 [피처 추출]
@@ -159,10 +159,10 @@ X_train, X_val, y_train, y_val = train_test_split(
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ✅ 파일명에 _pred2s 붙여서 기존 1초 데이터와 분리
-np.save(os.path.join(OUTPUT_DIR, "X_train_30fps_pred2s.npy"), X_train)
-np.save(os.path.join(OUTPUT_DIR, "y_train_30fps_pred2s.npy"), y_train)
-np.save(os.path.join(OUTPUT_DIR, "X_val_30fps_pred2s.npy"),   X_val)
-np.save(os.path.join(OUTPUT_DIR, "y_val_30fps_pred2s.npy"),   y_val)
+np.save(os.path.join(OUTPUT_DIR, "X_train_30fps_pred2s_04-c.npy"), X_train)
+np.save(os.path.join(OUTPUT_DIR, "y_train_30fps_pred2s_04-c.npy"), y_train)
+np.save(os.path.join(OUTPUT_DIR, "X_val_30fps_pred2s_04-c.npy"),   X_val)
+np.save(os.path.join(OUTPUT_DIR, "y_val_30fps_pred2s_04-c.npy"),   y_val)
 
 print(f"\n💾 저장 완료!")
 print(f"  Train : {X_train.shape} → X: (N, {SEQ_LENGTH}, 17), y: (N, {PRED_LENGTH}, 2)")
