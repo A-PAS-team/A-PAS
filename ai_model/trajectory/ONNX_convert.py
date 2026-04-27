@@ -9,11 +9,11 @@ import os
 INPUT_SIZE  = 17
 HIDDEN_SIZE = 256
 NUM_LAYERS  = 2
-SEQ_LENGTH  = 60
-PRED_LENGTH = 30
+SEQ_LENGTH  = 30
+PRED_LENGTH = 60
 
-MODEL_PATH = "models/Residual/best_model_30fps_v2_cctv_carla.pth"
-ONNX_PATH  = "models/Residual/best_model_30fps.onnx"
+MODEL_PATH = "models/Residual/0427/best_residual_30fps_pred2s.pth"
+ONNX_PATH  = "models/Residual/0427/best_residual_30fps_pred2s.onnx"
 
 # ==========================================
 # 🧠 [모델 정의] 학습 코드와 완전 동일
