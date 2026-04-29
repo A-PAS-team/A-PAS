@@ -329,66 +329,85 @@ def find_pedestrian_vehicle_pairs(pred_dict, track_classes):
 # 🎨 [시각화]
 # ==========================================
 def draw_predictions(frame, mean, std, n_pred, color=(0, 255, 255)):
-    """✨ MODIFIED: 반투명 채워진 부채꼴 + 중앙선 + warmup fade."""
+    """
+    경량 시각화: frame.copy()/addWeighted 제거 → cv2.line/circle만 사용.
+    - 중앙선: 실선 (두께 점진 감소)
+    - 불확실성 경계: 점선 (상/하 sigma 경계)
+    - 끝점: 원 + 불확실성 원
+    메모리 복사 0회 → 비샘플 프레임에서도 부담 없음.
+    """
     if n_pred < WARMUP_HIDE:
         return
-    if n_pred < WARMUP_FADE:
-        fade = (n_pred - WARMUP_HIDE) / max(1, WARMUP_FADE - WARMUP_HIDE)
-        fade = max(0.1, fade)
-    else:
-        fade = 1.0
 
     n = len(mean)
-    tiers = [
-        (0,           n // 3,      0.30, 3),
-        (n // 3,      2 * n // 3,  0.20, 2),
-        (2 * n // 3,  n,           0.10, 1),
-    ]
+    if n < 2:
+        return
 
-    for start, end, fill_alpha, line_thickness in tiers:
-        upper_pts, lower_pts = [], []
-        for t in range(start, min(end, n)):
-            if t == 0:
-                direction = mean[1] - mean[0] if n > 1 else np.array([1.0, 0.0])
-            elif t == n - 1:
-                direction = mean[-1] - mean[-2]
+    # --- 중앙선 (실선, 두께 점진 감소) ---
+    for t in range(n - 1):
+        pt1 = tuple(mean[t].astype(int))
+        pt2 = tuple(mean[t + 1].astype(int))
+        # 가까운 미래 = 두꺼움, 먼 미래 = 얇음
+        thickness = max(1, 3 - (t * 2 // n))
+        cv2.line(frame, pt1, pt2, color, thickness, cv2.LINE_AA)
+
+    # --- 불확실성 경계 (점선) ---
+    for t in range(n):
+        # 방향 벡터 계산
+        if t == 0:
+            direction = mean[1] - mean[0]
+        elif t == n - 1:
+            direction = mean[-1] - mean[-2]
+        else:
+            direction = mean[t + 1] - mean[t - 1]
+
+        norm_val = np.linalg.norm(direction)
+        if norm_val < 1e-6:
+            perpendicular = np.array([0.0, 1.0])
+        else:
+            perpendicular = np.array([-direction[1], direction[0]]) / norm_val
+
+        sigma = SIGMA_SCALE * float(np.linalg.norm(std[t]))
+        sigma = np.clip(sigma, 5, 200)
+
+        upper = (mean[t] + sigma * perpendicular).astype(int)
+        lower = (mean[t] - sigma * perpendicular).astype(int)
+
+        # 점선 효과: 짝수 인덱스만 그리기
+        if t % 2 == 0:
+            # 경계 틱 마크 (짧은 선분)
+            center_pt = tuple(mean[t].astype(int))
+            cv2.line(frame, center_pt, tuple(upper), color, 1, cv2.LINE_AA)
+            cv2.line(frame, center_pt, tuple(lower), color, 1, cv2.LINE_AA)
+
+        # 경계선 연결 (상/하 각각)
+        if t < n - 1:
+            direction_next = mean[t + 1] - mean[t] if t < n - 1 else direction
+            norm_next = np.linalg.norm(direction_next)
+            if norm_next < 1e-6:
+                perp_next = perpendicular
             else:
-                direction = mean[t+1] - mean[t-1]
+                perp_next = np.array([-direction_next[1], direction_next[0]]) / norm_next
 
-            norm = np.linalg.norm(direction)
-            if norm < 1e-6:
-                perpendicular = np.array([0.0, 1.0])
-            else:
-                perpendicular = np.array([-direction[1], direction[0]]) / norm
+            sigma_next = SIGMA_SCALE * float(np.linalg.norm(std[t + 1]))
+            sigma_next = np.clip(sigma_next, 5, 200)
 
-            sigma = SIGMA_SCALE * float(np.linalg.norm(std[t]))
-            sigma = np.clip(sigma, 5, 300)
+            upper_next = (mean[t + 1] + sigma_next * perp_next).astype(int)
+            lower_next = (mean[t + 1] - sigma_next * perp_next).astype(int)
 
-            upper_pts.append(mean[t] + sigma * perpendicular)
-            lower_pts.append(mean[t] - sigma * perpendicular)
+            # 점선: 2스텝마다 그리기
+            if t % 2 == 0:
+                cv2.line(frame, tuple(upper), tuple(upper_next), color, 1, cv2.LINE_AA)
+                cv2.line(frame, tuple(lower), tuple(lower_next), color, 1, cv2.LINE_AA)
 
-        if not upper_pts:
-            continue
+    # --- 끝점 표시 ---
+    # 중앙점 (실점)
+    cv2.circle(frame, tuple(mean[-1].astype(int)), 5, color, -1)
 
-        polygon = np.array(upper_pts + lower_pts[::-1], dtype=np.int32)
-        overlay = frame.copy()
-        cv2.fillPoly(overlay, [polygon], color)
-        cv2.addWeighted(
-            overlay, fill_alpha * fade,
-            frame, 1 - fill_alpha * fade,
-            0, frame
-        )
-
-        for t in range(start, min(end, n) - 1):
-            pt1 = tuple(mean[t].astype(int))
-            pt2 = tuple(mean[t+1].astype(int))
-            cv2.line(frame, pt1, pt2, color, line_thickness, cv2.LINE_AA)
-
-    end_alpha = 0.95 * fade
-    if end_alpha > 0.05:
-        overlay = frame.copy()
-        cv2.circle(overlay, tuple(mean[-1].astype(int)), 5, color, -1)
-        cv2.addWeighted(overlay, end_alpha, frame, 1 - end_alpha, 0, frame)
+    # 불확실성 원 (빈 원)
+    end_sigma = SIGMA_SCALE * float(np.linalg.norm(std[-1]))
+    end_sigma = int(np.clip(end_sigma, 8, 150))
+    cv2.circle(frame, tuple(mean[-1].astype(int)), end_sigma, color, 1, cv2.LINE_AA)
 
 
 CLASS_COLORS = {0: (0,0,255), 1: (0,255,0), 2: (255,0,255), 3: (255,165,0)}
