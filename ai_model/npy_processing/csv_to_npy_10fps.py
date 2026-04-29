@@ -143,11 +143,10 @@ if __name__ == "__main__":
     # 📂 소스별 처리 - 경로만 여기서 관리
     # ==========================================
     sources = {
-        "jamsil"  : os.path.join(BASE_DIR, "..", "data", "jamsil_DDP_csv"),
-        "jaehoon" : os.path.join(BASE_DIR, "..", "data", "Jaehoon_csv"),
-        "carla"   : os.path.join(BASE_DIR, "..", "data", "CARLA_csv"),
-    }
-
+        "cctv"  : os.path.join(BASE_DIR, "..", "data", "csv"),
+        "carla" : os.path.join(BASE_DIR, "..", "data", "csv_carla"),
+       }   
+    
     for tag, csv_folder in sources.items():
         if not os.path.exists(csv_folder):
             print(f"\n⏭️  {tag} 폴더 없음, 스킵: {csv_folder}")

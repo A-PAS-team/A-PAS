@@ -29,6 +29,11 @@ models/Residual/0427/*.pth
 models/Residual/0427/*.onnx
 *.pt                # YOLO 모델 파일 등
 
+ai_model/trajectory/mcdropout/checkpoints/*.pt
+ai_model/trajectory/mcdropout/*.onnx
+ai_model/trajectory/mcdropout/figures/*.png
+ai_model/trajectory/mcdropout/runs/
+
 # 5. YOLO fine-tuning 데이터 및 결과
 ai_model/yolo_train/carla_data*/
 ai_model/yolo_train/carla_dataset*/
