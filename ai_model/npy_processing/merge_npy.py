@@ -17,13 +17,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # 새 소스 추가 시 여기에만 추가
 # ==========================================
 VERSIONS = {
-    "v1_cctv": {
-        "10fps": ["jamsil", "jaehoon"],
-        "30fps": ["jamsil", "jaehoon"],
-    },
     "v2_cctv_carla": {
-        "10fps": ["jamsil", "jaehoon", "carla"],
-        "30fps": ["jamsil", "jaehoon", "carla"],
+        "10fps": ["cctv", "carla"],
     },
 }
 

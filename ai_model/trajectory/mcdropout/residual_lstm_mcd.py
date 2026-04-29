@@ -26,7 +26,7 @@ CONFIG: Dict[str, Any] = {
     "input_size": 17,
     "hidden_size": 256,
     "num_layers": 2,
-    "pred_length": 30,
+    "pred_length": 10,
     "dropout_p": 0.2,
 }
 
@@ -36,7 +36,7 @@ class ModelConfig:
     input_size: int = 17
     hidden_size: int = 256
     num_layers: int = 2
-    pred_length: int = 30
+    pred_length: int = 10
     dropout_p: float = 0.2
 
     @classmethod
