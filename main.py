@@ -14,9 +14,21 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 import time
+import sys  # ✨ NEW
 from collections import deque
 from ultralytics import YOLO
 from collections import defaultdict, deque, Counter
+
+try:  # ✨ NEW
+    sys.path.insert(0, "models/mcdropout")  # ✨ NEW
+    from mc_inference import run_lstm_with_uncertainty  # ✨ NEW
+except ImportError:  # ✨ NEW
+    sys.path.insert(0, r"C:\Users\dkdld\A-PAS\models\mcdropout")  # ✨ NEW
+    try:  # ✨ NEW
+        from mc_inference import run_lstm_with_uncertainty  # ✨ NEW
+    except ImportError as exc:  # ✨ NEW
+        print("❌ mc_inference import 실패. PYTHONPATH 또는 models/mcdropout 경로를 확인하세요.")  # ✨ NEW
+        raise exc  # ✨ NEW
 
 # ==========================================
 # ⚙️ [설정] 30FPS Residual LSTM
@@ -24,15 +36,15 @@ from collections import defaultdict, deque, Counter
 # --- 입력 소스 ---
 VIDEO_PATH      = "test_video5.mp4"       # 또는 CARLA HDMI 캡처
 YOLO_MODEL_PATH = "best_v6.pt"         # Hailo 사용 시 .hef로 교체
-ONNX_MODEL_PATH = "models/Residual/0427/best_residual_30fps_pred2s.onnx"
+ONNX_MODEL_PATH = "models/mcdropout/residual_mcd.onnx"  # ✨ MODIFIED
 
 # --- 해상도 ---
 IMG_W, IMG_H = 1920, 1080
 DIAG         = np.sqrt(IMG_W**2 + IMG_H**2)
 
 # --- 모델 설정 (30FPS) ---
-SEQ_LENGTH   = 30          # 1.0초 관찰
-PRED_LENGTH  = 60          # 2.0초 예측
+SEQ_LENGTH   = 60          # ✨ MODIFIED: 2초 관찰 (MC Dropout 모델 기준)
+PRED_LENGTH  = 30          # ✨ MODIFIED: 1초 예측
 INPUT_SIZE   = 17
 DT           = 1 / 30      # 30FPS
 
@@ -51,6 +63,29 @@ ACC_CLIP = 1.0             # ax, ay 클리핑
 # --- 충돌 판정 ---
 COLLISION_DIST = 80        # 픽셀 거리 임계값
 COLLISION_TTC  = 3         # 초
+
+# ✨ NEW: MC Dropout 설정
+MC_N_SAMPLES = 5
+MC_USE_BATCH = True
+SIGMA_SCALE = 2.0
+
+# ✨ NEW: 예측 시각화 안정화
+EMA_ALPHA = 0.4
+EMA_ALPHA_STD = 0.6
+WARMUP_HIDE = 5
+WARMUP_FADE = 15
+WARMUP_TTC_GATE = 5
+
+# ✨ NEW: 충돌 hysteresis
+COLLISION_HOLD = 2
+
+# ✨ NEW: TTC 페어링용
+VEHICLE_CLASSES = {1, 2, 3}
+
+# ✨ NEW: 클래스별 confidence threshold
+CONF_THRESHOLD = {
+    0: 0.35, 1: 0.25, 2: 0.30, 3: 0.25
+}
 
 # --- 클래스 매핑 ---
 CLASS_MAP    = {0: 0, 1: 1, 2: 2, 3: 3}
@@ -77,7 +112,12 @@ print(f"  🖥️  Providers: {lstm_session.get_providers()}")
 # ==========================================
 track_history    = {}   # {track_id: deque([17-dim feature], maxlen=SEQ)}
 prev_boxes       = {}   # {track_id: [x, y, w, h]}
-predictions      = {}   # {track_id: (PRED, 2) 픽셀 좌표}
+predictions_raw_mean = {}   # ✨ NEW: 판정용 MC mean (EMA 없음)
+predictions_raw_std  = {}   # ✨ NEW: 판정용 MC std (EMA 없음)
+predictions          = {}   # ✨ MODIFIED: 시각화용 mean (EMA)
+predictions_std      = {}   # ✨ NEW: 시각화용 std (EMA)
+pred_frame_count     = {}   # ✨ NEW: warmup 카운터
+collision_streak     = 0    # ✨ NEW: hysteresis 카운터
 velocity_history = {}   # {track_id: deque([[vx, vy]])}
 prev_velocity    = {}   # {track_id: [vx, vy]}
 track_classes    = {}   # {track_id: class_id}
@@ -155,67 +195,209 @@ def add_to_history(track_id, box, class_id, prev_box):
     track_classes[track_id] = class_id
 
 
-def run_lstm(track_id):
-    """LSTM 추론 → 미래 경로 반환 (픽셀 단위)"""
+# ✨ MODIFIED: 기존 단일 추론 함수는 롤백 대비 주석으로 유지
+# def run_lstm(track_id):
+#     """LSTM 추론 → 미래 경로 반환 (픽셀 단위)"""
+#     if len(track_history[track_id]) < SEQ_LENGTH:
+#         return None
+#
+#     seq = np.array(track_history[track_id], dtype=np.float32)
+#     seq = seq[np.newaxis, ...]
+#
+#     output = lstm_session.run(None, {"input": seq})[0]
+#     pred = output[0].copy()
+#
+#     pred[:, 0] *= IMG_W
+#     pred[:, 1] *= IMG_H
+#
+#     return pred
+
+
+def run_lstm_mc(track_id):
+    """✨ MODIFIED: MC Dropout으로 mean + std 추론."""
     if len(track_history[track_id]) < SEQ_LENGTH:
-        return None
+        return None, None
 
     seq = np.array(track_history[track_id], dtype=np.float32)
-    seq = seq[np.newaxis, ...]              # (1, 60, 17)
+    seq = seq[np.newaxis, ...]  # ✨ MODIFIED: (1, 60, 17)
 
-    output = lstm_session.run(None, {"input": seq})[0]  # (1, 30, 2)
-    pred = output[0].copy()                 # (30, 2) 정규화 좌표
+    mean, std = run_lstm_with_uncertainty(  # ✨ NEW
+        lstm_session, seq,
+        n_samples=MC_N_SAMPLES,
+        use_batch=MC_USE_BATCH,
+    )
 
-    # 역정규화
-    pred[:, 0] *= IMG_W
-    pred[:, 1] *= IMG_H
+    mean_px = mean.copy()  # ✨ NEW
+    std_px = std.copy()  # ✨ NEW
+    mean_px[..., 0] *= IMG_W  # ✨ NEW
+    mean_px[..., 1] *= IMG_H  # ✨ NEW
+    std_px[..., 0] *= IMG_W  # ✨ NEW
+    std_px[..., 1] *= IMG_H  # ✨ NEW
 
-    return pred
+    return mean_px, std_px
+
+
+def update_prediction(track_id, mean_new, std_new):
+    """✨ NEW: raw / smooth 분리 + 시간정렬 EMA."""
+    predictions_raw_mean[track_id] = mean_new
+    predictions_raw_std[track_id] = std_new
+
+    if track_id not in predictions:
+        predictions[track_id] = mean_new.copy()
+        predictions_std[track_id] = std_new.copy()
+        pred_frame_count[track_id] = 1
+        return
+
+    def shift_blend(prev, curr, alpha):
+        """✨ NEW: 예측 시점이 한 프레임 앞으로 흐르도록 정렬 후 EMA."""
+        shifted = np.empty_like(prev)
+        shifted[:-1] = prev[1:]
+        shifted[-1] = prev[-1] + (prev[-1] - prev[-2])
+        return alpha * curr + (1 - alpha) * shifted
+
+    predictions[track_id] = shift_blend(
+        predictions[track_id], mean_new, EMA_ALPHA
+    )
+    predictions_std[track_id] = shift_blend(
+        predictions_std[track_id], std_new, EMA_ALPHA_STD
+    )
+    pred_frame_count[track_id] += 1
 
 # ==========================================
 # ⚠️ [TTC 계산]
 # ==========================================
-def calc_ttc(pred_a, pred_b):
-    """두 객체의 예측 궤적 간 TTC 계산"""
+# ✨ MODIFIED: 기존 고정 마진 TTC는 롤백 대비 주석으로 유지
+# def calc_ttc(pred_a, pred_b):
+#     """두 객체의 예측 궤적 간 TTC 계산"""
+#     min_dist = float('inf')
+#     collision_frame = PRED_LENGTH
+#
+#     for t in range(PRED_LENGTH):
+#         dist = np.sqrt(
+#             (pred_a[t, 0] - pred_b[t, 0])**2 +
+#             (pred_a[t, 1] - pred_b[t, 1])**2
+#         )
+#         if dist < min_dist:
+#             min_dist = dist
+#         if dist < COLLISION_DIST:
+#             collision_frame = t
+#             break
+#
+#     ttc_seconds = collision_frame * DT
+#     return min_dist, collision_frame, ttc_seconds
+
+
+def calc_ttc_with_uncertainty(mean_a, std_a, mean_b, std_b):
+    """✨ MODIFIED: 부채꼴 영역 기반 충돌 판정."""
     min_dist = float('inf')
     collision_frame = PRED_LENGTH
 
     for t in range(PRED_LENGTH):
-        dist = np.sqrt(
-            (pred_a[t, 0] - pred_b[t, 0])**2 +
-            (pred_a[t, 1] - pred_b[t, 1])**2
-        )
+        dist = np.linalg.norm(mean_a[t] - mean_b[t])
+        sigma_a = SIGMA_SCALE * float(np.linalg.norm(std_a[t])) / np.sqrt(2)
+        sigma_b = SIGMA_SCALE * float(np.linalg.norm(std_b[t])) / np.sqrt(2)
+        safety_margin = COLLISION_DIST + sigma_a + sigma_b
+
         if dist < min_dist:
             min_dist = dist
-        if dist < COLLISION_DIST:
+        if dist < safety_margin:
             collision_frame = t
             break
 
     ttc_seconds = collision_frame * DT
     return min_dist, collision_frame, ttc_seconds
 
+
+def find_pedestrian_vehicle_pairs(pred_dict, track_classes):
+    """✨ NEW: 보행자-차량 쌍만 반환. Car-Car TTC는 우선순위 낮음."""
+    pairs = []
+    pids = [tid for tid in pred_dict if track_classes.get(tid) == 0]
+    vids = [tid for tid in pred_dict if track_classes.get(tid) in VEHICLE_CLASSES]
+    for p in pids:
+        for v in vids:
+            pairs.append((p, v))
+    return pairs
+
 # ==========================================
 # 🎨 [시각화]
 # ==========================================
-def draw_predictions(frame, pred, color=(0, 255, 255)):
-    """예측 궤적 시각화"""
-    for t in range(len(pred) - 1):
-        pt1 = (int(pred[t, 0]),   int(pred[t, 1]))
-        pt2 = (int(pred[t+1, 0]), int(pred[t+1, 1]))
-        cv2.line(frame, pt1, pt2, color, 2)
-    cv2.circle(frame, (int(pred[-1, 0]), int(pred[-1, 1])), 6, color, -1)
+def draw_predictions(frame, mean, std, n_pred, color=(0, 255, 255)):
+    """✨ MODIFIED: 반투명 채워진 부채꼴 + 중앙선 + warmup fade."""
+    if n_pred < WARMUP_HIDE:
+        return
+    if n_pred < WARMUP_FADE:
+        fade = (n_pred - WARMUP_HIDE) / max(1, WARMUP_FADE - WARMUP_HIDE)
+        fade = max(0.1, fade)
+    else:
+        fade = 1.0
+
+    n = len(mean)
+    tiers = [
+        (0,           n // 3,      0.30, 3),
+        (n // 3,      2 * n // 3,  0.20, 2),
+        (2 * n // 3,  n,           0.10, 1),
+    ]
+
+    for start, end, fill_alpha, line_thickness in tiers:
+        upper_pts, lower_pts = [], []
+        for t in range(start, min(end, n)):
+            if t == 0:
+                direction = mean[1] - mean[0] if n > 1 else np.array([1.0, 0.0])
+            elif t == n - 1:
+                direction = mean[-1] - mean[-2]
+            else:
+                direction = mean[t+1] - mean[t-1]
+
+            norm = np.linalg.norm(direction)
+            if norm < 1e-6:
+                perpendicular = np.array([0.0, 1.0])
+            else:
+                perpendicular = np.array([-direction[1], direction[0]]) / norm
+
+            sigma = SIGMA_SCALE * float(np.mean(std[t]))
+            sigma = np.clip(sigma, 2, 150)
+
+            upper_pts.append(mean[t] + sigma * perpendicular)
+            lower_pts.append(mean[t] - sigma * perpendicular)
+
+        if not upper_pts:
+            continue
+
+        polygon = np.array(upper_pts + lower_pts[::-1], dtype=np.int32)
+        overlay = frame.copy()
+        cv2.fillPoly(overlay, [polygon], color)
+        cv2.addWeighted(
+            overlay, fill_alpha * fade,
+            frame, 1 - fill_alpha * fade,
+            0, frame
+        )
+
+        for t in range(start, min(end, n) - 1):
+            pt1 = tuple(mean[t].astype(int))
+            pt2 = tuple(mean[t+1].astype(int))
+            cv2.line(frame, pt1, pt2, color, line_thickness, cv2.LINE_AA)
+
+    end_alpha = 0.95 * fade
+    if end_alpha > 0.05:
+        overlay = frame.copy()
+        cv2.circle(overlay, tuple(mean[-1].astype(int)), 5, color, -1)
+        cv2.addWeighted(overlay, end_alpha, frame, 1 - end_alpha, 0, frame)
 
 
 CLASS_COLORS = {0: (0,0,255), 1: (0,255,0), 2: (255,0,255), 3: (255,165,0)}
 
-def draw_bbox(frame, box, track_id, class_id):
+def draw_bbox(frame, box, track_id, class_id, conf=None):
+    """✨ MODIFIED: conf 파라미터 추가."""
     x, y, w, h = box
     x1, y1 = int(x - w/2), int(y - h/2)
     x2, y2 = int(x + w/2), int(y + h/2)
     cls_name = CLASS_NAMES.get(class_id, "?")
     color = CLASS_COLORS.get(class_id, (0, 255, 0))
     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-    cv2.putText(frame, f"ID:{track_id} [{cls_name}]",
+    label = f"ID:{track_id} [{cls_name}]"
+    if conf is not None:
+        label += f" {conf:.2f}"
+    cv2.putText(frame, label,
                 (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
 
@@ -271,6 +453,10 @@ def cleanup_stale_tracks(active_ids, frame_count, max_lost=60):
         track_history.pop(tid, None)
         prev_boxes.pop(tid, None)
         predictions.pop(tid, None)
+        predictions_std.pop(tid, None)         # ✨ NEW
+        predictions_raw_mean.pop(tid, None)    # ✨ NEW
+        predictions_raw_std.pop(tid, None)     # ✨ NEW
+        pred_frame_count.pop(tid, None)        # ✨ NEW
         velocity_history.pop(tid, None)
         prev_velocity.pop(tid, None)
         track_classes.pop(tid, None)
@@ -292,6 +478,10 @@ def merge_duplicate_tracks(predictions, prev_boxes, merge_dist=100):
                     to_remove.add(max(ids[i], ids[j]))  # 새 track 제거
     for tid in to_remove:
         predictions.pop(tid, None)
+        predictions_std.pop(tid, None)         # ✨ NEW
+        predictions_raw_mean.pop(tid, None)    # ✨ NEW
+        predictions_raw_std.pop(tid, None)     # ✨ NEW
+        pred_frame_count.pop(tid, None)        # ✨ NEW
 
 # ==========================================
 # 🎬 [메인 루프]
@@ -307,6 +497,13 @@ print(f"   관찰: {SEQ_LENGTH/30:.1f}초 → 예측: {PRED_LENGTH/30:.1f}초")
 print(f"   속도 스무딩: {SMOOTH_WINDOW}프레임 이동평균")
 print(f"   충돌 기준: 거리 {COLLISION_DIST}px, TTC {COLLISION_TTC}초")
 print(f"   종료: 'q' 키\n")
+print(f"\n🔬 Phase 3 활성화:")  # ✨ NEW
+print(f"   MC Sampling: n={MC_N_SAMPLES}, batch={MC_USE_BATCH}")  # ✨ NEW
+print(f"   부채꼴: SIGMA_SCALE={SIGMA_SCALE} (2σ 신뢰구간)")  # ✨ NEW
+print(f"   Warmup: {WARMUP_HIDE}~{WARMUP_FADE} 프레임")  # ✨ NEW
+print(f"   첫 추론 대기: {SEQ_LENGTH/VIDEO_FPS:.1f}초 (SEQ_LENGTH={SEQ_LENGTH})")  # ✨ NEW
+print(f"   동적 안전 마진: COLLISION_DIST + 2σ_pred")  # ✨ NEW
+print(f"   Hysteresis: {COLLISION_HOLD} 프레임 연속 위험 시 경보")  # ✨ NEW
 
 latency_list = []
 frame_count  = 0
@@ -363,6 +560,9 @@ try:
                 # 최근 10프레임 중 최빈값 클래스 추출
                 voted_class_id = Counter(class_votes[track_id]).most_common(1)[0][0]
 
+                if conf < CONF_THRESHOLD.get(int(class_id), 0.25):  # ✨ NEW
+                    continue  # ✨ NEW: conf 낮은 detection 스킵
+
                 # --- [추가 2] 갭(Gap) 체크 및 Zeroing ---
                 if track_id in prev_frames:
                     frame_diff = frame_count - prev_frames[track_id]
@@ -388,37 +588,56 @@ try:
                     add_to_history(track_id, box, voted_class_id, prev_box)
                     prev_boxes[track_id] = box
 
-                    pred = run_lstm(track_id)
-                    if pred is not None:
-                        predictions[track_id] = pred
+                    mean, std = run_lstm_mc(track_id)  # ✨ MODIFIED
+                    if mean is not None:  # ✨ MODIFIED
+                        update_prediction(track_id, mean, std)  # ✨ NEW
 
                 # ③ 시각화 (디버깅용: ID와 신뢰도 점수를 같이 띄워 추적 안정성 확인)
                 # draw_bbox 함수 내부를 수정하여 conf 값도 같이 표시되게 하면 분석하기 좋습니다.
-                draw_bbox(frame, box, track_id, voted_class_id)
+                draw_bbox(frame, box, track_id, voted_class_id, conf)  # ✨ MODIFIED
                 if track_id in predictions:
-                    draw_predictions(frame, predictions[track_id])
+                    n_pred = pred_frame_count.get(track_id, 0)  # ✨ NEW
+                    draw_predictions(  # ✨ MODIFIED
+                        frame,
+                        predictions[track_id],
+                        predictions_std[track_id],
+                        n_pred
+                    )
 
             if is_sample_frame:
                 merge_duplicate_tracks(predictions, prev_boxes)
 
-            # ④ TTC 계산 (예측이 2개 이상일 때)
-            if is_sample_frame and len(predictions) >= 2:
-                id_list = list(predictions.keys())
-                for i in range(len(id_list)):
-                    for j in range(i + 1, len(id_list)):
-                        min_dist, col_frame, ttc_sec = calc_ttc(
-                            predictions[id_list[i]],
-                            predictions[id_list[j]]
-                        )
-                        if min_dist < min_dist_global:
-                            min_dist_global = min_dist
-                            ttc_global      = col_frame
-                            ttc_sec_global  = ttc_sec
+            # ④ TTC 계산 (보행자-차량 쌍만 + uncertainty margin + hysteresis)  # ✨ MODIFIED
+            if is_sample_frame and len(predictions_raw_mean) >= 2:
+                valid_ids = {  # ✨ NEW
+                    tid for tid in predictions_raw_mean
+                    if pred_frame_count.get(tid, 0) >= WARMUP_TTC_GATE
+                }
+                valid_preds = {tid: predictions_raw_mean[tid] for tid in valid_ids}  # ✨ NEW
+                pairs = find_pedestrian_vehicle_pairs(valid_preds, track_classes)  # ✨ NEW
+                pair_risk = False  # ✨ NEW
 
-                # ← 이 부분 추가
-                if (min_dist_global < COLLISION_DIST and
-                    ttc_sec_global < COLLISION_TTC):
-                    collision_risk = True       
+                for p_id, v_id in pairs:
+                    min_dist, col_frame, ttc_sec = calc_ttc_with_uncertainty(  # ✨ MODIFIED
+                        predictions_raw_mean[p_id], predictions_raw_std[p_id],
+                        predictions_raw_mean[v_id], predictions_raw_std[v_id],
+                    )
+                    if min_dist < min_dist_global:
+                        min_dist_global = min_dist
+                        ttc_global      = col_frame
+                        ttc_sec_global  = ttc_sec
+                    if col_frame < PRED_LENGTH and ttc_sec < COLLISION_TTC:  # ✨ NEW
+                        pair_risk = True
+
+                if pair_risk:  # ✨ NEW
+                    collision_streak += 1
+                else:
+                    collision_streak = 0
+
+                if collision_streak >= COLLISION_HOLD:  # ✨ NEW
+                    collision_risk = True
+            elif is_sample_frame:  # ✨ NEW
+                collision_streak = 0  # ✨ NEW
 
         # ⑤ 경고 출력
         if collision_risk:
