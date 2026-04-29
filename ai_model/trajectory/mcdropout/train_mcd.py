@@ -25,17 +25,16 @@ from residual_lstm_mcd import (
     count_parameters,
 )
 
-
 BASE_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = BASE_DIR.parents[1]
+PROJECT_ROOT = BASE_DIR.parents[2]
 
 CONFIG: Dict[str, Any] = {
     "img_w": 1920,
     "img_h": 1080,
-    "seq_length": 60,
-    "pred_length": 30,
+    "seq_length": 20,
+    "pred_length": 10,
     "batch_size": 64,
-    "epochs": 200,
+    "epochs": 300,
     "lr": 1e-3,
     "weight_decay": 0.0,
     "early_stop_patience": 15,
@@ -44,12 +43,12 @@ CONFIG: Dict[str, Any] = {
     "use_tensorboard": True,
     "use_wandb": False,
     "data_dir": PROJECT_ROOT / "ai_model" / "data" / "Training",
-    "x_train": "X_train_30fps_carla.npy",
-    "y_train": "y_train_30fps_carla.npy",
-    "x_val": "X_val_30fps_carla.npy",
-    "y_val": "y_val_30fps_carla.npy",
+    "x_train": "X_train_final_10fps_v2_cctv_carla.npy",
+    "y_train": "y_train_final_10fps_v2_cctv_carla.npy",
+    "x_val": "X_val_final_10fps_v2_cctv_carla.npy",
+    "y_val": "y_val_final_10fps_v2_cctv_carla.npy",
     "checkpoint_dir": BASE_DIR / "checkpoints",
-    "checkpoint_name": "best_residual_mcd.pt",
+    "checkpoint_name": "best_residual_mcd_10fps.pt",
     "log_dir": BASE_DIR / "runs",
     # TODO: 확인 필요 - 실제 CARLA 데이터셋 버전/파일명이 바뀌면 위 파일명을 맞춰야 함.
 }
@@ -219,7 +218,7 @@ def train() -> None:
 
     print(f"[device] {device}")
     print(f"[model] SEQ={CONFIG['seq_length']} -> PRED={CONFIG['pred_length']}, dropout={args.dropout_p}")
-    print("[model] Current dataset mode: 2s observe -> 1s predict at 30 FPS.")
+    print("[model] Current dataset mode: 2s observe -> 1s predict at 10 FPS.")
     print("[note] Expected deterministic ADE impact from MC Dropout: +0.3~0.5 px.")
 
     train_loader, val_loader = load_data(args.data_dir, args.batch_size, CONFIG["num_workers"])

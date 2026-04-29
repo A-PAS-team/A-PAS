@@ -20,10 +20,10 @@ from ultralytics import YOLO
 from collections import defaultdict, deque, Counter
 
 try:  # ✨ NEW
-    sys.path.insert(0, "models/mcdropout")  # ✨ NEW
+    sys.path.insert(0, "ai_model/trajectory/mcdropout")  # ✨ NEW
     from mc_inference import run_lstm_with_uncertainty  # ✨ NEW
 except ImportError:  # ✨ NEW
-    sys.path.insert(0, r"C:\Users\dkdld\A-PAS\models\mcdropout")  # ✨ NEW
+    sys.path.insert(0, r"C:/Users/USER/Desktop/UIJIN_Workfolder/workplace/A-PAS/ai_model/trajectory/mcdropout")  # ✨ NEW
     try:  # ✨ NEW
         from mc_inference import run_lstm_with_uncertainty  # ✨ NEW
     except ImportError as exc:  # ✨ NEW
@@ -36,21 +36,21 @@ except ImportError:  # ✨ NEW
 # --- 입력 소스 ---
 VIDEO_PATH      = "test_video5.mp4"       # 또는 CARLA HDMI 캡처
 YOLO_MODEL_PATH = "best_v6.pt"         # Hailo 사용 시 .hef로 교체
-ONNX_MODEL_PATH = "models/mcdropout/residual_mcd.onnx"  # ✨ MODIFIED
+ONNX_MODEL_PATH = "ai_model/trajectory/mcdropout/residual_mcd_10fps.onnx"  # ✨ MODIFIED
 
 # --- 해상도 ---
 IMG_W, IMG_H = 1920, 1080
 DIAG         = np.sqrt(IMG_W**2 + IMG_H**2)
 
 # --- 모델 설정 (30FPS) ---
-SEQ_LENGTH   = 60          # ✨ MODIFIED: 2초 관찰 (MC Dropout 모델 기준)
-PRED_LENGTH  = 30          # ✨ MODIFIED: 1초 예측
+SEQ_LENGTH   = 20          # ✨ MODIFIED: 2초 관찰 (MC Dropout 모델 기준)
+PRED_LENGTH  = 10          # ✨ MODIFIED: 1초 예측
 INPUT_SIZE   = 17
-DT           = 1 / 30      # 30FPS
+DT           = 0.1      # 30FPS
 
 # --- 영상 → 모델 샘플링 ---
 VIDEO_FPS       = 30
-TARGET_FPS      = 30       # 30FPS 모델이므로 매 프레임 처리
+TARGET_FPS      = 10       # 30FPS 모델이므로 매 프레임 처리
 SAMPLE_INTERVAL = VIDEO_FPS // TARGET_FPS  # = 1
 
 # --- 속도 스무딩 ---
@@ -65,9 +65,9 @@ COLLISION_DIST = 80        # 픽셀 거리 임계값
 COLLISION_TTC  = 3         # 초
 
 # ✨ NEW: MC Dropout 설정
-MC_N_SAMPLES = 5
+MC_N_SAMPLES = 20
 MC_USE_BATCH = True
-SIGMA_SCALE = 2.0
+SIGMA_SCALE = 8.0
 
 # ✨ NEW: 예측 시각화 안정화
 EMA_ALPHA = 0.4
@@ -219,6 +219,11 @@ def run_lstm_mc(track_id):
         return None, None
 
     seq = np.array(track_history[track_id], dtype=np.float32)
+
+    # 임시 디버그 출력 추가
+    last_pos_px = seq[-1, :2] * np.array([IMG_W, IMG_H])
+    print(f"[DEBUG] track {track_id} last_pos_px: {last_pos_px}")
+
     seq = seq[np.newaxis, ...]  # ✨ MODIFIED: (1, 60, 17)
 
     mean, std = run_lstm_with_uncertainty(  # ✨ NEW
@@ -233,6 +238,8 @@ def run_lstm_mc(track_id):
     mean_px[..., 1] *= IMG_H  # ✨ NEW
     std_px[..., 0] *= IMG_W  # ✨ NEW
     std_px[..., 1] *= IMG_H  # ✨ NEW
+
+    print(f"[DEBUG] track {track_id} pred[0]_px: {mean_px[0]}, pred[-1]_px: {mean_px[-1]}")
 
     return mean_px, std_px
 
@@ -354,8 +361,8 @@ def draw_predictions(frame, mean, std, n_pred, color=(0, 255, 255)):
             else:
                 perpendicular = np.array([-direction[1], direction[0]]) / norm
 
-            sigma = SIGMA_SCALE * float(np.mean(std[t]))
-            sigma = np.clip(sigma, 2, 150)
+            sigma = SIGMA_SCALE * float(np.linalg.norm(std[t]))
+            sigma = np.clip(sigma, 5, 300)
 
             upper_pts.append(mean[t] + sigma * perpendicular)
             lower_pts.append(mean[t] - sigma * perpendicular)
@@ -574,6 +581,9 @@ try:
                             velocity_history[track_id].clear()
                         if track_id in prev_velocity:
                             prev_velocity[track_id] = [0.0, 0.0]  # 혹은 del prev_velocity[track_id]
+                        # 히스토리 오염 방지: 갭 발생 시 LSTM 입력 초기화
+                        if track_id in track_history:
+                            track_history[track_id].clear()
                             
                 # 현재 프레임 번호 업데이트
                 prev_frames[track_id] = frame_count

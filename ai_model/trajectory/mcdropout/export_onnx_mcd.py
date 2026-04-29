@@ -21,9 +21,9 @@ from residual_lstm_mcd import build_model, enable_mc_dropout
 BASE_DIR = Path(__file__).resolve().parent
 
 CONFIG: Dict[str, Any] = {
-    "checkpoint_path": BASE_DIR / "checkpoints" / "best_residual_mcd.pt",
-    "onnx_path": BASE_DIR / "residual_mcd.onnx",
-    "seq_length": 60,
+    "checkpoint_path": BASE_DIR / "checkpoints" / "best_residual_mcd_10fps.pt",
+    "onnx_path": BASE_DIR / "residual_mcd_10fps.onnx",
+    "seq_length": 20,
     "input_size": 17,
     "opset_version": 14,
     "batch_size": 1,
@@ -81,8 +81,20 @@ def export() -> None:
         input_names=["input"],
         output_names=["output"],
         dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
-        training=torch.onnx.TrainingMode.PRESERVE,
     )
+
+    import onnxruntime as ort
+    import numpy as np
+    session = ort.InferenceSession(str(args.onnx), providers=["CPUExecutionProvider"])
+    dummy_np = dummy_input.numpy()
+    out1 = session.run(None, {"input": dummy_np})[0]
+    out2 = session.run(None, {"input": dummy_np})[0]
+    diff = float(np.abs(out1 - out2).max())
+    print(f"[dropout check] max diff between runs: {diff:.8f}")
+    if diff > 1e-8:
+        print("[dropout check] PASS - stochastic active")
+    else:
+        print("[dropout check] FAIL - deterministic, MC Dropout 비활성")
 
     try:
         import onnx
