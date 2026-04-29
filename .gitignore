@@ -24,13 +24,20 @@ models/**/*.pth
 models/**/*.onnx
 models/**/*.png
 models/**/eval/*.png
+models/Residual/0427/*.png
+models/Residual/0427/*.pth
+models/Residual/0427/*.onnx
 *.pt                # YOLO 모델 파일 등
 
 # 5. YOLO fine-tuning 데이터 및 결과
-ai_model/yolo_train/carla_data/
-ai_model/yolo_train/carla_dataset/
+ai_model/yolo_train/carla_data*/
+ai_model/yolo_train/carla_dataset*/
 ai_model/yolo_train/runs/
 ai_model/yolo_train/*.cache
+embedded/carla_data*/
+embedded/carla_data_v*/
+embedded/*pt
+
 
 # 6. 테스트 영상
 *.mp4
