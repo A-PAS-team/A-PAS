@@ -13,7 +13,9 @@ YOLOv8n을 fine-tuning합니다.
 
 from ultralytics import YOLO
 import os
-
+import torch
+torch.cuda.set_per_process_memory_fraction(0.5)
+import shutil
 # ==========================================
 # ⚙️ [설정]
 # ==========================================
@@ -33,7 +35,7 @@ PATIENCE   = 10         # Early stopping
 
 # 프로젝트명 (결과 저장 폴더)
 PROJECT = os.path.join(BASE_DIR, "runs", "detect")
-NAME    = "apas_carla_v5"
+NAME    = "apas_carla_v6"
 
 # ==========================================
 # 🚀 [학습]
@@ -106,7 +108,8 @@ def main():
     print(f"  Best model : {best_path}")
     print(f"  결과 폴더  : {os.path.join(PROJECT, NAME)}")
     print()
-
+    
+    shutil.copy(best_path, os.path.join(PROJECT, NAME, "weights", "best_v6.pt"))
     # === ONNX 변환 (Hailo DFC 입력용) ===
     print("🔄 ONNX 변환 중...")
     best_model = YOLO(best_path)

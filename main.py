@@ -35,7 +35,7 @@ except ImportError:  # ✨ NEW
 # ==========================================
 # --- 입력 소스 ---
 VIDEO_PATH      = "test_video5.mp4"       # 또는 CARLA HDMI 캡처
-YOLO_MODEL_PATH = "best_v6.pt"         # Hailo 사용 시 .hef로 교체
+YOLO_MODEL_PATH = "best_v7.pt"         # Hailo 사용 시 .hef로 교체
 ONNX_MODEL_PATH = "ai_model/trajectory/mcdropout/residual_mcd_10fps.onnx"  # ✨ MODIFIED
 
 # --- 해상도 ---
