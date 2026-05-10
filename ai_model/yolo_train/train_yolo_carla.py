@@ -25,17 +25,17 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_MODEL = "yolov8n.pt"
 
 # 데이터셋 (prepare_yolo_data.py에서 생성한 것)
-DATA_YAML = os.path.join(BASE_DIR, "carla_dataset_v5", "data.yaml")
+DATA_YAML = os.path.join(BASE_DIR, "dataset_v8_5class", "data.yaml")
 
 # 학습 설정
-EPOCHS     = 50         # 500~1000장이면 50 에포크면 충분
+EPOCHS     = 150         # 500~1000장이면 50 에포크면 충분
 IMGSZ      = 1280        # Hailo-8 배포 기준 640
-BATCH_SIZE = 8         # RTX 5060이면 16~32 가능
-PATIENCE   = 10         # Early stopping
+BATCH_SIZE = 6         # RTX 5060이면 16~32 가능
+PATIENCE   = 30         # Early stopping
 
 # 프로젝트명 (결과 저장 폴더)
 PROJECT = os.path.join(BASE_DIR, "runs", "detect")
-NAME    = "apas_carla_v6"
+NAME    = "best_v8_5class"
 
 # ==========================================
 # 🚀 [학습]
@@ -83,7 +83,7 @@ def main():
         scale=0.3,          # 스케일
         flipud=0.0,         # 상하 반전 (CCTV 앵글이니 비활성)
         fliplr=0.5,         # 좌우 반전
-        mosaic=0.0,         # 모자이크 (과하면 안 좋음)
+        mosaic=1.0,         # 모자이크 (과하면 안 좋음)
         bgr=0.1,
         erasing=0.2,
 
@@ -109,7 +109,7 @@ def main():
     print(f"  결과 폴더  : {os.path.join(PROJECT, NAME)}")
     print()
     
-    shutil.copy(best_path, os.path.join(PROJECT, NAME, "weights", "best_v6.pt"))
+    shutil.copy(best_path, os.path.join(PROJECT, NAME, "weights", "best_v8.pt"))
     # === ONNX 변환 (Hailo DFC 입력용) ===
     print("🔄 ONNX 변환 중...")
     best_model = YOLO(best_path)
