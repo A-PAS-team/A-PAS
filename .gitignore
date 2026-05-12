@@ -27,6 +27,7 @@ models/**/eval/*.png
 models/Residual/0427/*.png
 models/Residual/0427/*.pth
 models/Residual/0427/*.onnx
+models/Kinematic/
 *.pt                # YOLO 모델 파일 등
 
 ai_model/trajectory/mcdropout/checkpoints/*.pt
