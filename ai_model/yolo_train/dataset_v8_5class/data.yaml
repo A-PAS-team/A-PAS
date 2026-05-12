@@ -1,5 +1,0 @@
-train: images/train
-val: images/val
-
-nc: 5
-names: ['Person', 'Car', 'Motorcycle', 'Large_Veh', 'Crosswalk']

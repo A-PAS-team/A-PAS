@@ -1,0 +1,95 @@
+[33mae6abbb9[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature/crosswalk[m[33m, [m[1;31morigin/feature/crosswalk[m[33m)[m 망했다
+[33m8db819af[m work-add crosswalk on yolo
+[33m03d97365[m[33m ([m[1;31morigin/feature/quntization_yolo[m[33m, [m[1;32mfeature/quntization_yolo[m[33m)[m feat: calibration images
+[33m7c4fd9a7[m[33m ([m[1;31morigin/feature/add_data[m[33m, [m[1;32mfeature/add_data[m[33m)[m feature augment data and train
+[33m56746eb2[m[33m ([m[1;31morigin/develop[m[33m)[m feat: generate .npy(seq 1s, pred 1.5s)
+[33md4977958[m def draw_prediction 수정: 부채꼴 --> 원
+[33m0e23e858[m Revert "def draw_prediction 수정: 부채꼴 --> 원"
+[33mf6f1a2ea[m def draw_prediction 수정: 부채꼴 --> 원
+[33mda0eb24d[m feat: main 부채꼴 수정, train 10fps
+[33m772198ff[m[33m ([m[1;31morigin/feature/mcdrop_develop[m[33m, [m[1;32mfeature/mcdrop_develop[m[33m)[m def draw_prediction 수정: 부채꼴 --> 원
+[33mbeddbe7b[m feat: main 부채꼴 수정, train 10fps
+[33m0d3db921[m[33m ([m[1;32mdevelop[m[33m)[m Merge pull request #6 from A-PAS-team/feature/mcdrop
+[33mad5ebefb[m[33m ([m[1;31morigin/feature/mcdrop[m[33m, [m[1;32mfeature/mcdrop[m[33m)[m feat: mcdropout 추가 유틸리티 스크립트 등록
+[33mbcbd8940[m mcdrop 및 설정한 메인파일
+[33m3a077512[m feat: 주요 학습 및 추론 스크립트 4종 추가
+[33m64ed06ea[m Merge pull request #5 from A-PAS-team/feature/0427
+[33m8a67b1dc[m[33m ([m[1;31morigin/feature/0427[m[33m, [m[1;32mfeature/0427[m[33m)[m feat: work pred2s, yolo fine tuning
+[33m34ef43a3[m[33m ([m[1;31morigin/feature/cleanup-tracked-files[m[33m, [m[1;32mfeature/cleanup-tracked-files[m[33m)[m chore: .gitignore 재적용 및 불필요한 추적 파일 정리
+[33m82817616[m feat: main.py 수정, img --> 1280 resize
+[33m2bf8e8c3[m Merge pull request #3 from A-PAS-team/feature/cleanup-tracked-files
+[33mf0d3227a[m chore: .pt 파일 추적 해제 + gitignore 업데이트
+[33ma5ff424e[m Merge pull request #2 from A-PAS-team/feature/yolo-finetuning
+[33m0a0b9375[m[33m ([m[1;31morigin/feature/yolo-finetuning[m[33m, [m[1;32mfeature/yolo-finetuning[m[33m)[m feat: YOLO CARLA fine-tuning 파이프라인 추가
+[33m68d6ed39[m[33m ([m[1;31morigin/feature/git-guide[m[33m, [m[1;32mfeature/git-guide[m[33m)[m add git guide
+[33m7b11db31[m[33m ([m[1;33mtag: [m[1;33mv0.9-carla-yolo[m[33m, [m[1;32mmain[m[33m)[m chore: .pt 파일 추적 해제 (gitignore 적용)
+[33mafde8900[m chore: gitignore 적용, 대용량 파일 추적 해제
+[33ma208efe3[m Yolov8n fine tuning
+[33m1af2e9b9[m yolo
+[33ma5bf726a[m add
+[33m1fbda7c9[m campare model pred2s
+[33mb09a648d[m modify requirements-pi.txt
+[33md4a85277[m modify gitignore
+[33m162671e3[m add hailo
+[33mfab57088[m modify README
+[33mdad8e9e2[m addpred2s
+[33mb8577467[m Merge branch 'main' of https://github.com/A-PAS-team/A-PAS
+[33mf314f110[m test
+[33mdf6f2af4[m tuning
+[33mbb8b11e1[m Merge branch 'main' of https://github.com/A-PAS-team/A-PAS
+[33me593f56c[m adding sqrt at attention architecture
+[33m6273a4f3[m train 30fps
+[33m4b6bf49d[m add checkfile
+[33m6263b1d0[m chore: remove tracked images and apply gitignore
+[33m91335ee6[m modify gitignore
+[33m2cedb26e[m modify eval
+[33mb08a529e[m add arcitecture
+[33m40d982f6[m 30fps vi cctv
+[33m8d0d8e25[m variety modify
+[33m7d162ed1[m modify gitignore
+[33m105facd7[m modify gitignore
+[33md5867206[m modify merge_npy.py
+[33m35482f0f[m readme
+[33mfceb02a1[m Merge branch 'main' of https://github.com/A-PAS-team/A-PAS
+[33mbd0bbec5[m add eval
+[33m86b1e326[m Revise input method selection rationale
+[33mcbd2d195[m Remove team composition and roles from README
+[33me1395112[m Remove key engineering achievements from README
+[33m82125988[m Merge pull request #1 from UIJIN2003/2026_-3_26
+[33mb291bc2c[m Merge branch 'main' into 2026_-3_26
+[33m246fd9ce[m modify README
+[33m6339b7af[m modify README
+[33m42757f57[m modify gitignore
+[33m9cd14f89[m npy, trajectory 코드 추가
+[33m58cae258[m video to csv 수정
+[33m9e06a041[m tr_trajectory --> hidden 256, 30fps, 60 seq 30 pred
+[33m09236692[m update trajectory
+[33mbf19d0d3[m Modify Readme
+[33m9cf2a4c9[m Modify Readme
+[33m433f1a7d[m Modify tr_trajectory
+[33mb545d05e[m chore: 프로젝트 구조에 맞춰 gitignore 최적화 및 대용량 파일 제외
+[33m897c33c6[m modify feature
+[33m0261f6eb[m Revise README for clarity and project details
+[33m7b187844[m 0225
+[33m4c085cc9[m main.py modified
+[33m2c05d172[m main.py수정
+[33mf40f2eb1[m modify tr_trajectory, main.py
+[33m71bcfc3b[m fix: finalize data exclusion and sync
+[33m1efd889c[m fix: remove tracked data files and update ignore
+[33m0cea67e4[m first attept
+[33mb4e5298e[m first attemp
+[33m99ecf1bc[m gitignore 수정
+[33m5dea1ac4[m jpg_to_csv.py, rename_foler.py, move_img.py 추가
+[33m7f7869a4[m README update
+[33m7d5e8637[m README update
+[33mf009bb02[m lstm model architecture, video2csv code, etc(folder) add
+[33m5ddee625[m testcode 추가, test용 maincode추가
+[33m35e7681a[m main.c --> main.py
+[33m22e061cb[m README Update
+[33m0b055a89[m README Update
+[33m61575d5d[m README Update
+[33md8e4198f[m 프로젝트 폴 구조, 라파/pc환경설정, 욜로간단코드
+[33m135b9666[m README 수정
+[33mf4ae513d[m Merge branch 'main' of https://github.com/UIJIN2003/A-PAS
+[33m920ce57b[m 프로젝트 초기 세팅 : ignore 설
+[33m794cac0b[m Initial commit
