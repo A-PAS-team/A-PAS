@@ -97,7 +97,7 @@ git push origin feature/내작업이름
 2. "Compare & pull request" 버튼 클릭
 3. `base: develop` ← `compare: feature/내작업이름` 확인
 4. 제목 + 설명 작성 후 PR 생성
-5. 팀장(의진)에게 리뷰어 지정
+5. 의진에게 리뷰어 지정
 
 **PR이 merge되면 develop 브랜치로 병합돼요.** 본인이 직접 develop에 merge하지 마세요!
 

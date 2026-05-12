@@ -13,7 +13,9 @@ YOLOv8n을 fine-tuning합니다.
 
 from ultralytics import YOLO
 import os
-
+import torch
+torch.cuda.set_per_process_memory_fraction(0.5)
+import shutil
 # ==========================================
 # ⚙️ [설정]
 # ==========================================
@@ -23,17 +25,17 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_MODEL = "yolov8n.pt"
 
 # 데이터셋 (prepare_yolo_data.py에서 생성한 것)
-DATA_YAML = os.path.join(BASE_DIR, "carla_dataset", "data.yaml")
+DATA_YAML = os.path.join(BASE_DIR, "dataset_v8_5class", "data.yaml")
 
 # 학습 설정
-EPOCHS     = 50         # 500~1000장이면 50 에포크면 충분
-IMGSZ      = 640        # Hailo-8 배포 기준 640
-BATCH_SIZE = 16         # RTX 5060이면 16~32 가능
-PATIENCE   = 10         # Early stopping
+EPOCHS     = 150         # 500~1000장이면 50 에포크면 충분
+IMGSZ      = 1280        # Hailo-8 배포 기준 640
+BATCH_SIZE = 6         # RTX 5060이면 16~32 가능
+PATIENCE   = 30         # Early stopping
 
 # 프로젝트명 (결과 저장 폴더)
 PROJECT = os.path.join(BASE_DIR, "runs", "detect")
-NAME    = "apas_carla"
+NAME    = "best_v8_5class"
 
 # ==========================================
 # 🚀 [학습]
@@ -70,7 +72,7 @@ def main():
         # 작은 데이터셋(500~1000장)에서의 오버피팅 방지
         lr0=0.001,          # 초기 LR (pretrained이니까 낮게)
         lrf=0.01,           # 최종 LR 비율
-        warmup_epochs=3,    # 워밍업
+        warmup_epochs=5,    # 워밍업
 
         # Data augmentation (CARLA→실세계 도메인 갭 줄이기)
         hsv_h=0.015,        # 색상 변환
@@ -81,7 +83,10 @@ def main():
         scale=0.3,          # 스케일
         flipud=0.0,         # 상하 반전 (CCTV 앵글이니 비활성)
         fliplr=0.5,         # 좌우 반전
-        mosaic=0.5,         # 모자이크 (과하면 안 좋음)
+        mosaic=1.0,         # 모자이크 (과하면 안 좋음)
+        bgr=0.1,
+        erasing=0.2,
+
 
         # 저장
         project=PROJECT,
@@ -103,13 +108,14 @@ def main():
     print(f"  Best model : {best_path}")
     print(f"  결과 폴더  : {os.path.join(PROJECT, NAME)}")
     print()
-
+    
+    shutil.copy(best_path, os.path.join(PROJECT, NAME, "weights", "best_v8.pt"))
     # === ONNX 변환 (Hailo DFC 입력용) ===
     print("🔄 ONNX 변환 중...")
     best_model = YOLO(best_path)
     onnx_path = best_model.export(
         format="onnx",
-        imgsz=640,
+        imgsz=1280,
         opset=13,       # Hailo DFC 호환
         simplify=True,
     )

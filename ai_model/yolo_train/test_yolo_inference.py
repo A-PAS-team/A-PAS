@@ -18,7 +18,7 @@ from ultralytics import YOLO
 # ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(
-    BASE_DIR, "runs", "detect", "apas_carla", "weights", "best.pt"
+    BASE_DIR, "runs", "detect", "apas_carla_v2", "weights", "best.pt"
 )
 
 # 클래스 색상 (person=빨강, car=초록, moto=핑크, bus=주황, truck=노랑)

@@ -13,12 +13,12 @@ BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
 INPUT_FOLDER = os.path.join(BASE_DIR, "..", "..", "raw_data")
 OUTPUT_FOLDER = os.path.join(BASE_DIR, "data", "csv")
 
-MODEL_NAME     = "yolov8n.pt"
+MODEL_NAME     = "best_v6.pt"
 CONF_THRESHOLD = 0.3
 MIN_TRACK_LEN  = 90  # 30FPS 기준 최소 3초
 
 # 클래스 정의 (가독성)
-TARGET_CLASSES = [0, 2, 3, 5, 7]  # Person, Car, Motorcycle, Bus, Truck
+TARGET_CLASSES = [0, 1, 2, 3]  # Person, Car, Motorcycle, Large vehicle
 
 # ==========================================
 
@@ -45,6 +45,8 @@ def process_video(video_path, output_path, model):
 
         results = model.track(
             frame,
+            agnostic_nms=False,
+            imgsz=1280,
             persist=True,
             tracker="bytetrack.yaml",
             verbose=False,
