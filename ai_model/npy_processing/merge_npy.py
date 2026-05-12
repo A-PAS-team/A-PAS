@@ -17,8 +17,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # 새 소스 추가 시 여기에만 추가
 # ==========================================
 VERSIONS = {
-    "v2_cctv_carla": {
-        "10fps": ["cctv", "carla"],
+    "v3kin_cctv_carla": {
+        "10fps": ["cctv_v3kin", "carla_v3kin"],
     },
 }
 
@@ -55,8 +55,8 @@ def merge_and_split(sources, fps, version):
     print(f"\n  📊 병합 결과: {X_all.shape}")
 
     # 클래스별 샘플 수 출력
-    class_names = ["Person", "Car", "Bus", "Truck", "Motorcycle"]
-    class_idx   = np.argmax(X_all[:, 0, 12:17], axis=1)
+    class_idx = np.argmax(X_all[:, 0, 13:17], axis=1)
+    class_names = ["Person", "Car", "Motorcycle", "Large_Veh"]
     print(f"\n  📊 클래스 분포:")
     for i, name in enumerate(class_names):
         count = (class_idx == i).sum()
