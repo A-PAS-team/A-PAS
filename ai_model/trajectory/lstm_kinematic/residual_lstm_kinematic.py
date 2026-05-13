@@ -144,11 +144,16 @@ class KinematicLayer(nn.Module):
 
         for t in range(pred_length):
             v_t = speed_px[:, t]              # (batch,) 픽셀/초
-            w_t = yaw_rate[:, t]              # (batch,) rad/step
+            decay_factors = torch.tensor(
+                [0.97 ** t for t in range(pred_length)],
+                device=device,
+                dtype=dtype
+            )                                   # (pred_length,) 감쇠 계수
+            w_t = yaw_rate[:, t] * decay_factors[t]          # (batch,) rad/step
 
             # 직진 vs 회전 분기 (미분 가능 soft blending)
             w_abs = torch.abs(w_t)
-            is_straight = (w_abs < 1e-4).float()
+            is_straight = (w_abs < 0.01).float()
 
             # --- 직진 ---
             dx_straight = v_t * torch.cos(psi) * self.dt

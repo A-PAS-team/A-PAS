@@ -29,7 +29,7 @@ from residual_lstm_kinematic import ResidualLSTMKinematic, ModelConfig
 # ==========================================
 VIDEO_PATH      = "test_video/test_video5.mp4"
 YOLO_MODEL_PATH = "best_v8.pt"
-CHECKPOINT_PATH = "models/Kinematic/best_kinematic_10fps_v3kin_cctv_carla.pth"
+CHECKPOINT_PATH = "models/Kinematic/best_kinematic_10fps_v6_future_linear2.pth"
 
 IMG_W, IMG_H = 1920, 1080
 DIAG         = math.sqrt(IMG_W**2 + IMG_H**2)
@@ -48,7 +48,7 @@ HEADING_SMOOTH  = 3
 VEL_CLIP        = 2.0
 ACC_CLIP        = 1.0
 YAW_RATE_MAX    = math.pi
-LOW_SPEED_THRESH = 30.0
+LOW_SPEED_THRESH = 15.0
 
 DISPLAY_SCALE = 0.75
 
@@ -134,7 +134,18 @@ def compute_features(box, prev_box, track_id):
 
     vx_sm = sum(vx_smooth_hist[track_id]) / len(vx_smooth_hist[track_id])
     vy_sm = sum(vy_smooth_hist[track_id]) / len(vy_smooth_hist[track_id])
-    heading_smooth = math.atan2(vy_sm, vx_sm)
+   
+    speed_smooth = math.hypot(vx_sm, vy_sm)
+
+    prev_heading_store = getattr(compute_features, '_prev_heading', {})
+
+    if speed_smooth < LOW_SPEED_THRESH:
+        if track_id in prev_heading_store:
+            heading_smooth = prev_heading_store[track_id]
+        else:
+            heading_smooth = 0.0
+    else:
+        heading_smooth = math.atan2(vy_sm, vx_sm)
 
     # yaw_rate 계산 (이전 heading과의 차이)
     prev_heading = getattr(compute_features, '_prev_heading', {})
@@ -152,7 +163,7 @@ def compute_features(box, prev_box, track_id):
     compute_features._prev_heading = prev_heading
 
     # 저속 마스킹
-    if speed < LOW_SPEED_THRESH:
+    if speed_smooth < LOW_SPEED_THRESH:
         yaw_rate = 0.0
 
     # 물리적 클램프
@@ -167,8 +178,8 @@ def compute_features(box, prev_box, track_id):
         max(-ACC_CLIP, min(ACC_CLIP, ax / IMG_W)),
         max(-ACC_CLIP, min(ACC_CLIP, ay / IMG_H)),
         speed / DIAG,
-        math.sin(heading),
-        math.cos(heading),
+        math.sin(heading_smooth),
+        math.cos(heading_smooth),
         w / IMG_W,
         h / IMG_H,
         (w * h) / (IMG_W * IMG_H),

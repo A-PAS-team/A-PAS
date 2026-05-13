@@ -25,6 +25,7 @@ import argparse
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import math
 
 from residual_lstm_kinematic import (
     ResidualLSTMKinematic, ModelConfig, PhysicsLoss,
@@ -47,6 +48,11 @@ parser.add_argument('--lambda-curv',  type=float, default=0.05,
 parser.add_argument('--finetune',     type=str,   default=None,
                     help="기존 checkpoint에서 fine-tuning (FC 레이어만 재초기화)")
 parser.add_argument('--version',      type=str,   default="v3kin_cctv_carla")
+parser.add_argument('--lambda-future', type=float, default=2.0,
+                    help="Future timestep weighting strength")
+parser.add_argument('--future-schedule', type=str, default="linear",
+                    choices=["linear", "exp"],
+                    help="Future weighting schedule")
 args = parser.parse_args()
 
 # ==========================================
@@ -56,7 +62,8 @@ IMG_W, IMG_H = 1920, 1080
 SEQ_LENGTH   = 10   # 1초 @ 10FPS
 PRED_LENGTH  = 20   # 2초 @ 10FPS
 INPUT_SIZE   = 17
-TAG          = f"10fps_{args.version}"
+DATA_TAG  = "10fps_v3kin_cctv_carla"
+MODEL_TAG = f"10fps_{args.version}"
 
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = os.path.join(BASE_DIR, "..", "..", "data", "Training")
@@ -78,7 +85,8 @@ print(f"  Lambda head   : {args.lambda_head}")
 print(f"  Lambda curv   : {args.lambda_curv}")
 print(f"  Fine-tune     : {args.finetune or 'None (from scratch)'}")
 print(f"  Device        : {device}")
-print(f"  Tag           : {TAG}")
+print(f"  DATA_Tag           : {DATA_TAG}")
+print(f"  MODEL_Tag           : {MODEL_TAG}")
 print("=" * 60)
 
 
@@ -86,10 +94,10 @@ print("=" * 60)
 # 📊 [데이터 로드]
 # ==========================================
 def load_data():
-    print(f"\n📂 데이터 로드 중... [{TAG}]")
+    print(f"\n📂 데이터 로드 중... [{DATA_TAG}]")
 
     # merged 파일이 있으면 사용, 없으면 개별 파일 로드
-    merged_prefix = f"final_{TAG}"
+    merged_prefix = f"final_{DATA_TAG}"
     x_train_path = os.path.join(DATA_DIR, f"X_train_{merged_prefix}.npy")
 
     if os.path.exists(x_train_path):
@@ -111,9 +119,9 @@ def load_data():
                 y_parts.append(np.load(os.path.join(DATA_DIR, f"y_train_{suffix}.npy")))
                 X_val_parts.append(np.load(os.path.join(DATA_DIR, f"X_val_{suffix}.npy")))
                 y_val_parts.append(np.load(os.path.join(DATA_DIR, f"y_val_{suffix}.npy")))
-                print(f"    ✅ {tag}: {X_parts[-1].shape}")
+                print(f"    ✅ {MODEL_TAG}: {X_parts[-1].shape}")
             else:
-                print(f"    ⏭️  {tag} 없음")
+                print(f"    ⏭️  {MODEL_TAG} 없음")
 
         if not X_parts:
             raise FileNotFoundError("학습 데이터 없음! csv_to_npy_10fps_v3_kinematic.py를 먼저 실행하세요.")
@@ -142,7 +150,7 @@ def load_data():
 # ==========================================
 def save_plots(history):
     fig, axes = plt.subplots(2, 3, figsize=(20, 10))
-    fig.suptitle(f"A-PAS Kinematic LSTM — Training Report ({TAG})", fontsize=14)
+    fig.suptitle(f"A-PAS Kinematic LSTM — Training Report ({MODEL_TAG})", fontsize=14)
     epochs = range(1, len(history["train_loss"]) + 1)
 
     # Row 1: Loss, ADE, FDE
@@ -185,10 +193,45 @@ def save_plots(history):
         ax.set_xlabel("Epoch")
 
     plt.tight_layout()
-    path = os.path.join(MODEL_DIR, f"training_report_{TAG}.png")
+    path = os.path.join(MODEL_DIR, f"training_report_{MODEL_TAG}.png")
     plt.savefig(path, dpi=150)
     plt.close()
     print(f"  📊 그래프 저장: {path}")
+
+
+# ==========================================
+# 📉 [Future Weighted MSE]
+# ==========================================
+def future_weighted_mse(pred, target, lambda_future=2.0, schedule="linear"):
+    """후반 timestep에 더 큰 가중치를 부여하는 MSE.
+
+    Args:
+        pred:           (batch, T, 2)
+        target:         (batch, T, 2)
+        lambda_future:  마지막 스텝의 가중치 (1.0이면 일반 MSE)
+        schedule:       "linear" 또는 "exp"
+
+    Returns:
+        weighted MSE loss (scalar)
+    """
+    T = pred.shape[1]
+    device = pred.device
+
+    if schedule == "linear":
+        weights = torch.linspace(1.0, lambda_future, T, device=device)
+    elif schedule == "exp":
+        weights = torch.exp(
+            torch.linspace(0, math.log(max(lambda_future, 1e-6)), T, device=device)
+        )
+    else:
+        weights = torch.ones(T, device=device)
+
+    weights = weights.view(1, T, 1)  # (1, T, 1) broadcast
+
+    mse = (pred - target) ** 2       # (B, T, 2)
+    weighted_mse = mse * weights     # (B, T, 2)
+
+    return weighted_mse.mean()
 
 
 # ==========================================
@@ -233,6 +276,7 @@ def train():
 
     print(f"\n  📐 파라미터 수: {count_parameters(model):,}")
     print(f"  📉 Physics Loss: λ_heading={args.lambda_head}, λ_curvature={args.lambda_curv}")
+    print(f"  📉 Future Weight: λ={args.lambda_future}, schedule={args.future_schedule}")
 
     best_val_loss    = float('inf')
     early_stop_count = 0
@@ -259,14 +303,18 @@ def train():
             # forward_with_raw → positions + speed + yaw_rate
             pred, speed, yaw_rate = model.forward_with_raw(X_batch)
 
-            # MSE loss (좌표 기준)
-            mse_loss = mse_criterion(pred, y_batch)
+            # MSE loss (Future Weighted)
+            mse_loss = future_weighted_mse(
+                pred, y_batch,
+                lambda_future=args.lambda_future,
+                schedule=args.future_schedule,
+            )
 
             # Physics loss
             phys_loss = physics_loss_fn(pred, yaw_rate)
 
             # Total loss
-            loss = mse_loss + phys_loss
+            loss = mse_loss + phys_loss 
             loss.backward()
 
             # Gradient clipping (안정성)
@@ -294,9 +342,11 @@ def train():
                 X_batch, y_batch = X_batch.to(device), y_batch.to(device)
 
                 pred, speed, yaw_rate = model.forward_with_raw(X_batch)
-                mse_loss = mse_criterion(pred, y_batch)
+
+                # Model selection은 plain MSE + physics로 (bias 방지)
+                plain_mse = nn.functional.mse_loss(pred, y_batch)
                 phys_loss = physics_loss_fn(pred, yaw_rate)
-                val_loss_sum += (mse_loss + phys_loss).item()
+                val_loss_sum += (plain_mse + phys_loss).item()
 
                 # ADE/FDE (픽셀 단위)
                 p = pred.clone()
@@ -338,7 +388,7 @@ def train():
             best_val_loss = avg_val
             early_stop_count = 0
 
-            save_path = os.path.join(MODEL_DIR, f"best_kinematic_{TAG}.pth")
+            save_path = os.path.join(MODEL_DIR, f"best_kinematic_{MODEL_TAG}.pth")
             torch.save({
                 "model_state_dict": model.state_dict(),
                 "model_config": model_config.to_dict(),
@@ -360,7 +410,7 @@ def train():
     save_plots(history)
 
     print(f"\n{'='*60}")
-    print(f"  🎉 학습 완료! [Kinematic LSTM — {TAG}]")
+    print(f"  🎉 학습 완료! [Kinematic LSTM — {MODEL_TAG}]")
     print(f"{'='*60}")
     print(f"  파라미터 수   : {count_parameters(model):,}")
     print(f"  Best Val Loss : {best_val_loss:.5f}")

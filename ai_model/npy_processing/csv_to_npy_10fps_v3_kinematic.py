@@ -86,24 +86,26 @@ def get_features(group):
     # --- heading & yaw_rate: smoothed velocity 기반 ---
     # raw vx/vy로 heading을 구하면 프레임 간 노이즈로 yaw_rate가 폭발.
     # → velocity를 이동평균 스무딩한 후 heading 계산.
-    HEADING_SMOOTH = 3  # 3프레임 이동평균 (0.3초 @ 10FPS)
+  # --- heading & yaw_rate: causal smoothed velocity 기반 ---
+    HEADING_SMOOTH = 3
 
     vx_vals = df['vx'].values.astype(np.float64)
     vy_vals = df['vy'].values.astype(np.float64)
 
-    # 이동평균 (causal: 현재 + 과거만 사용)
-    vx_smooth = np.convolve(vx_vals, np.ones(HEADING_SMOOTH)/HEADING_SMOOTH, mode='same')
-    vy_smooth = np.convolve(vy_vals, np.ones(HEADING_SMOOTH)/HEADING_SMOOTH, mode='same')
+    vx_smooth = np.zeros_like(vx_vals)
+    vy_smooth = np.zeros_like(vy_vals)
 
-    # 경계 보정: 처음 HEADING_SMOOTH 프레임은 평균 개수가 적으므로 원본 사용
-    vx_smooth[:HEADING_SMOOTH-1] = vx_vals[:HEADING_SMOOTH-1]
-    vy_smooth[:HEADING_SMOOTH-1] = vy_vals[:HEADING_SMOOTH-1]
+    for i in range(len(vx_vals)):
+        start = max(0, i - HEADING_SMOOTH + 1)
+
+        vx_smooth[i] = vx_vals[start:i+1].mean()
+        vy_smooth[i] = vy_vals[start:i+1].mean()
 
     # smoothed heading (yaw_rate 계산용)
     heading_smooth = np.arctan2(vy_smooth, vx_smooth)
 
     # raw heading (sin_h, cos_h 피처용 — 기존과 호환 유지)
-    df['heading'] = np.arctan2(df['vy'], df['vx'])
+    df['heading'] = heading_smooth
     df['sin_h']   = np.sin(df['heading'])
     df['cos_h']   = np.cos(df['heading'])
 

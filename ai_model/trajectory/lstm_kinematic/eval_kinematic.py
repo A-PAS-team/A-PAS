@@ -68,18 +68,28 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 # 📊 [데이터 로드]
 # ==========================================
 def load_val_data():
-    """검증 데이터 로드. merged 또는 개별 소스."""
-    # merged 파일 시도
+    """검증 데이터 로드. merged 우선, 없으면 개별 소스 합침."""
+    import glob
+
+    # 1. merged 파일 시도
     for pattern in [
         "X_val_final_10fps_v3kin*.npy",
-        "X_val_10fps_cctv_v3kin.npy",
     ]:
-        import glob
-        matches = glob.glob(os.path.join(DATA_DIR, pattern))
+        matches = sorted(glob.glob(os.path.join(DATA_DIR, pattern)))
         if matches:
-            break
+            x_path = matches[0]
+            y_path = x_path.replace("X_val_", "y_val_")
+            if os.path.exists(y_path):
+                X_val = np.load(x_path)
+                y_val = np.load(y_path)
+                print(f"  ✅ merged: {os.path.basename(x_path)} → {X_val.shape}")
+                if args.n_samples:
+                    X_val = X_val[:args.n_samples]
+                    y_val = y_val[:args.n_samples]
+                print(f"  총 검증 샘플: {len(X_val):,}")
+                return X_val, y_val
 
-    # 개별 소스 합침
+    # 2. 개별 소스 합침 (fallback)
     X_parts, y_parts = [], []
     for tag in ["cctv", "carla"]:
         xp = os.path.join(DATA_DIR, f"X_val_10fps_{tag}_v3kin.npy")
@@ -90,7 +100,7 @@ def load_val_data():
             print(f"  ✅ {tag}: {X_parts[-1].shape}")
 
     if not X_parts:
-        raise FileNotFoundError("검증 데이터 없음!")
+        raise FileNotFoundError(f"검증 데이터 없음! DATA_DIR={DATA_DIR}")
 
     X_val = np.concatenate(X_parts, axis=0)
     y_val = np.concatenate(y_parts, axis=0)
@@ -282,6 +292,67 @@ def save_comparison_plot(results_kin, results_base=None):
     print(f"  📊 비교 그래프 저장: {path}")
 
 
+def analyze_yaw_rate_and_speed(model, X_val, y_val):
+    """모델의 predicted yaw_rate/speed vs GT yaw_rate 분석."""
+    model.eval()
+
+    all_pred_yaw = []
+    all_pred_speed = []
+    all_gt_yaw = []
+
+    with torch.no_grad():
+        batch_size = 256
+        for start in range(0, len(X_val), batch_size):
+            end = min(start + batch_size, len(X_val))
+            X_batch = torch.FloatTensor(X_val[start:end]).to(device)
+
+            _, speed, yaw_rate = model.forward_with_raw(X_batch)
+
+            all_pred_yaw.append(yaw_rate.cpu().numpy())
+            all_pred_speed.append(speed.cpu().numpy())
+
+            # GT yaw_rate: 입력의 index 12
+            all_gt_yaw.append(X_batch[:, :, 12].cpu().numpy())
+
+    pred_yaw = np.concatenate(all_pred_yaw, axis=0).flatten()
+    pred_speed = np.concatenate(all_pred_speed, axis=0).flatten()
+    gt_yaw = np.concatenate(all_gt_yaw, axis=0).flatten()
+
+    print(f"\n{'='*55}")
+    print(f"🔍 Predicted yaw_rate Distribution Analysis")
+    print(f"{'='*55}")
+
+    print(f"📊 Predicted yaw_rate stats")
+    print(f"  mean             : {pred_yaw.mean():.6f}")
+    print(f"  std              : {pred_yaw.std():.6f}")
+    print(f"  abs mean         : {np.abs(pred_yaw).mean():.6f}")
+    print(f"  min / max        : {pred_yaw.min():.6f} / {pred_yaw.max():.6f}")
+    print(f"  |yaw| < 0.01     : {(np.abs(pred_yaw) < 0.01).mean():.2%}")
+
+    print(f"📊 Ground Truth yaw_rate stats")
+    print(f"  mean             : {gt_yaw.mean():.6f}")
+    print(f"  std              : {gt_yaw.std():.6f}")
+    print(f"  abs mean         : {np.abs(gt_yaw).mean():.6f}")
+    print(f"  min / max        : {gt_yaw.min():.6f} / {gt_yaw.max():.6f}")
+    print(f"  |yaw| < 0.01     : {(np.abs(gt_yaw) < 0.01).mean():.2%}")
+
+    print(f"{'='*55}")
+    print(f"📈 GT vs Pred yaw_rate 비교")
+    print(f"{'='*55}")
+    gt_std = max(gt_yaw.std(), 1e-8)
+    gt_abs = max(np.abs(gt_yaw).mean(), 1e-8)
+    print(f"  std ratio        : {pred_yaw.std() / gt_std:.4f}")
+    print(f"  abs mean ratio   : {np.abs(pred_yaw).mean() / gt_abs:.4f}")
+
+    print(f"{'='*55}")
+    print(f"📊 Predicted speed stats")
+    print(f"{'='*55}")
+    print(f"  mean             : {pred_speed.mean():.6f}")
+    print(f"  std              : {pred_speed.std():.6f}")
+    print(f"  abs mean         : {np.abs(pred_speed).mean():.6f}")
+    print(f"  min / max        : {pred_speed.min():.6f} / {pred_speed.max():.6f}")
+
+
 # ==========================================
 # 🚀 [메인]
 # ==========================================
@@ -297,11 +368,13 @@ def main():
     results_kin = compute_metrics(model_kin, X_val, y_val)
     print_results(results_kin, "[Kinematic LSTM]")
 
+    # yaw_rate / speed 분석
+    analyze_yaw_rate_and_speed(model_kin, X_val, y_val)
+
     # 베이스라인 비교 (선택)
     results_base = None
     if args.baseline:
         print(f"\n📦 베이스라인 모델 로드...")
-        # 베이스라인은 17피처 모델이므로 yaw_rate 열 제거
         try:
             from residual_lstm_mcd import build_model as build_baseline
             ckpt = torch.load(args.baseline, map_location=device)
@@ -309,12 +382,10 @@ def main():
             baseline.load_state_dict(ckpt["model_state_dict"])
             baseline.eval().to(device)
 
-            # 17피처로 줄여서 평가
             X_val_17 = np.concatenate([X_val[:, :, :12], X_val[:, :, 13:]], axis=-1)
             results_base = compute_metrics(baseline, X_val_17, y_val)
             print_results(results_base, "[Baseline Residual LSTM]")
 
-            # 개선율
             print(f"\n📈 개선율:")
             print(f"  ADE: {results_base['total_ade']:.2f} → {results_kin['total_ade']:.2f} "
                   f"({(1 - results_kin['total_ade']/results_base['total_ade'])*100:+.1f}%)")
