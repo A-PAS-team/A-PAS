@@ -144,11 +144,12 @@ class KinematicLayer(nn.Module):
 
         for t in range(pred_length):
             v_t = speed_px[:, t]              # (batch,) 픽셀/초
-            w_t = yaw_rate[:, t]              # (batch,) rad/step
+            MAX_YAW_RATE = math.pi / 4
+            w_t = yaw_rate[:, t] * MAX_YAW_RATE              # (batch,) rad/step
 
             # 직진 vs 회전 분기 (미분 가능 soft blending)
             w_abs = torch.abs(w_t)
-            is_straight = (w_abs < 1e-4).float()
+            is_straight = (w_abs < 0.02).float()
 
             # --- 직진 ---
             dx_straight = v_t * torch.cos(psi) * self.dt
@@ -243,7 +244,7 @@ class ResidualLSTMKinematic(nn.Module):
         raw = raw.view(batch_size, self.config.pred_length, 2)
 
         speed = raw[:, :, 0]      # (batch, pred_length)
-        yaw_rate = raw[:, :, 1]   # (batch, pred_length)
+        yaw_rate = torch.tanh(raw[:, :, 1])   # (batch, pred_length)
 
         # speed는 양수여야 함 (softplus로 양수 보장)
         speed = torch.nn.functional.softplus(speed)
@@ -271,7 +272,7 @@ class ResidualLSTMKinematic(nn.Module):
 
         raw = self.fc(h_last).view(batch_size, self.config.pred_length, 2)
         speed = torch.nn.functional.softplus(raw[:, :, 0])
-        yaw_rate = raw[:, :, 1]
+        yaw_rate = torch.tanh(raw[:, :, 1])
 
         init_pos = x[:, -1, :2]
         init_heading = torch.atan2(x[:, -1, 7], x[:, -1, 8])
