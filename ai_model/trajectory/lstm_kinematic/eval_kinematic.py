@@ -285,48 +285,173 @@ def save_comparison_plot(results_kin, results_base=None):
 # ==========================================
 # 🚀 [메인]
 # ==========================================
+# ==========================================
+# 🚀 [메인]
+# ==========================================
 def main():
     print(f"\n🔍 A-PAS Kinematic LSTM 평가")
     print(f"   Device: {device}")
 
     X_val, y_val = load_val_data()
 
-    # Kinematic 모델 평가
+    # ==========================================
+    # 📦 모델 로드
+    # ==========================================
     print(f"\n📦 Kinematic 모델 로드...")
     model_kin = load_model(args.checkpoint)
+
+    # ==========================================
+    # 📊 ADE / FDE 평가
+    # ==========================================
     results_kin = compute_metrics(model_kin, X_val, y_val)
     print_results(results_kin, "[Kinematic LSTM]")
 
-    # 베이스라인 비교 (선택)
+    # ==========================================
+    # 🔍 Predicted yaw_rate distribution 분석
+    # ==========================================
+    print(f"\n{'='*55}")
+    print("🔍 Predicted yaw_rate Distribution Analysis")
+    print(f"{'='*55}")
+
+    all_pred_yaw = []
+    all_pred_speed = []
+
+    model_kin.eval()
+
+    with torch.no_grad():
+        batch_size = 256
+
+        for start in range(0, len(X_val), batch_size):
+            end = min(start + batch_size, len(X_val))
+
+            X_batch = torch.FloatTensor(X_val[start:end]).to(device)
+
+            # positions + raw outputs
+            _, pred_speed, pred_yaw = model_kin.forward_with_raw(X_batch)
+
+            pred_yaw_np = pred_yaw.cpu().numpy().reshape(-1)
+            pred_speed_np = pred_speed.cpu().numpy().reshape(-1)
+
+            all_pred_yaw.append(pred_yaw_np)
+            all_pred_speed.append(pred_speed_np)
+
+    all_pred_yaw = np.concatenate(all_pred_yaw)
+    all_pred_speed = np.concatenate(all_pred_speed)
+
+    # ==========================================
+    # 📊 GT yaw_rate distribution
+    # ==========================================
+    gt_yaw = X_val[:, :, 12].reshape(-1)
+
+    # ==========================================
+    # 📊 Pred yaw_rate 통계
+    # ==========================================
+    print("\n📊 Predicted yaw_rate stats")
+    print(f"  mean             : {all_pred_yaw.mean():.6f}")
+    print(f"  std              : {all_pred_yaw.std():.6f}")
+    print(f"  abs mean         : {np.abs(all_pred_yaw).mean():.6f}")
+    print(f"  min / max        : {all_pred_yaw.min():.6f} / {all_pred_yaw.max():.6f}")
+
+    pred_straight_ratio = (np.abs(all_pred_yaw) < 0.01).mean()
+
+    print(f"  |yaw| < 0.01     : {pred_straight_ratio:.2%}")
+
+    # ==========================================
+    # 📊 GT yaw_rate 통계
+    # ==========================================
+    print("\n📊 Ground Truth yaw_rate stats")
+    print(f"  mean             : {gt_yaw.mean():.6f}")
+    print(f"  std              : {gt_yaw.std():.6f}")
+    print(f"  abs mean         : {np.abs(gt_yaw).mean():.6f}")
+    print(f"  min / max        : {gt_yaw.min():.6f} / {gt_yaw.max():.6f}")
+
+    gt_straight_ratio = (np.abs(gt_yaw) < 0.01).mean()
+
+    print(f"  |yaw| < 0.01     : {gt_straight_ratio:.2%}")
+
+    # ==========================================
+    # 📈 GT vs Pred 비교
+    # ==========================================
+    print(f"\n{'='*55}")
+    print("📈 GT vs Pred yaw_rate 비교")
+    print(f"{'='*55}")
+
+    std_ratio = all_pred_yaw.std() / (gt_yaw.std() + 1e-6)
+    abs_ratio = np.abs(all_pred_yaw).mean() / (np.abs(gt_yaw).mean() + 1e-6)
+
+    print(f"  std ratio        : {std_ratio:.4f}")
+    print(f"  abs mean ratio   : {abs_ratio:.4f}")
+
+    if std_ratio < 0.3:
+        print("\n🚨 WARNING: yaw_rate collapse 의심!")
+        print("   모델이 회전을 거의 출력하지 않을 가능성이 큼")
+
+    # ==========================================
+    # 📊 speed 통계
+    # ==========================================
+    print(f"\n{'='*55}")
+    print("📊 Predicted speed stats")
+    print(f"{'='*55}")
+
+    print(f"  mean             : {all_pred_speed.mean():.6f}")
+    print(f"  std              : {all_pred_speed.std():.6f}")
+    print(f"  abs mean         : {np.abs(all_pred_speed).mean():.6f}")
+    print(f"  min / max        : {all_pred_speed.min():.6f} / {all_pred_speed.max():.6f}")
+
+    # ==========================================
+    # 📦 베이스라인 비교 (선택)
+    # ==========================================
     results_base = None
+
     if args.baseline:
         print(f"\n📦 베이스라인 모델 로드...")
-        # 베이스라인은 17피처 모델이므로 yaw_rate 열 제거
+
         try:
             from residual_lstm_mcd import build_model as build_baseline
+
             ckpt = torch.load(args.baseline, map_location=device)
+
             baseline = build_baseline(ckpt.get("model_config"))
+
             baseline.load_state_dict(ckpt["model_state_dict"])
+
             baseline.eval().to(device)
 
-            # 17피처로 줄여서 평가
-            X_val_17 = np.concatenate([X_val[:, :, :12], X_val[:, :, 13:]], axis=-1)
-            results_base = compute_metrics(baseline, X_val_17, y_val)
+            # yaw_rate 제거 → 기존 16피처 모델용
+            X_val_17 = np.concatenate(
+                [X_val[:, :, :12], X_val[:, :, 13:]],
+                axis=-1
+            )
+
+            results_base = compute_metrics(
+                baseline,
+                X_val_17,
+                y_val
+            )
+
             print_results(results_base, "[Baseline Residual LSTM]")
 
-            # 개선율
             print(f"\n📈 개선율:")
-            print(f"  ADE: {results_base['total_ade']:.2f} → {results_kin['total_ade']:.2f} "
-                  f"({(1 - results_kin['total_ade']/results_base['total_ade'])*100:+.1f}%)")
-            print(f"  FDE: {results_base['total_fde']:.2f} → {results_kin['total_fde']:.2f} "
-                  f"({(1 - results_kin['total_fde']/results_base['total_fde'])*100:+.1f}%)")
-            if "curve_ade" in results_kin and "curve_ade" in results_base:
-                print(f"  Curve ADE: {results_base['curve_ade']:.2f} → {results_kin['curve_ade']:.2f} "
-                      f"({(1 - results_kin['curve_ade']/results_base['curve_ade'])*100:+.1f}%)")
-        except Exception as e:
-            print(f"  ⚠️  베이스라인 평가 실패: {e}")
+            print(
+                f"  ADE: {results_base['total_ade']:.2f} → "
+                f"{results_kin['total_ade']:.2f} "
+                f"({(1 - results_kin['total_ade']/results_base['total_ade'])*100:+.1f}%)"
+            )
 
+            print(
+                f"  FDE: {results_base['total_fde']:.2f} → "
+                f"{results_kin['total_fde']:.2f} "
+                f"({(1 - results_kin['total_fde']/results_base['total_fde'])*100:+.1f}%)"
+            )
+
+        except Exception as e:
+            print(f"  ⚠️ 베이스라인 평가 실패: {e}")
+
+    # ==========================================
+    # 📊 그래프 저장
+    # ==========================================
     save_comparison_plot(results_kin, results_base)
+
     print(f"\n🎉 평가 완료!")
 
 

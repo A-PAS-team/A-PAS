@@ -27,7 +27,7 @@ from residual_lstm_kinematic import ResidualLSTMKinematic, ModelConfig
 # ==========================================
 # ⚙️ [설정]
 # ==========================================
-VIDEO_PATH      = "test_video1.mp4"
+VIDEO_PATH      = "test_video/test_video5.mp4"
 YOLO_MODEL_PATH = "best_v8.pt"
 CHECKPOINT_PATH = "models/Kinematic/best_kinematic_10fps_v3kin_cctv_carla.pth"
 
@@ -264,7 +264,9 @@ cap = cv2.VideoCapture(VIDEO_PATH)
 if not cap.isOpened():
     print(f"❌ 영상 열기 실패: {VIDEO_PATH}")
     exit()
-
+IMG_W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+IMG_H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+DIAG  = math.sqrt(IMG_W**2 + IMG_H**2)
 print(f"\n🚀 Kinematic LSTM 테스트 시작!")
 print(f"   영상: {VIDEO_PATH}")
 print(f"   SEQ={SEQ_LENGTH} (1초) → PRED={PRED_LENGTH} (2초)")
